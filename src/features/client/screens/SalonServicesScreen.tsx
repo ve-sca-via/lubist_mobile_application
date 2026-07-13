@@ -115,7 +115,13 @@ export function SalonServicesScreen() {
   const toggleService = (svc: SalonService) => {
     const existing = cartItemFor(svc.id);
     if (existing) removeItem(existing.id);
-    else addToCart({ service_id: svc.id, salon_id: salonId, quantity: 1 });
+    else {
+      const unitPrice =
+        svc.discounted_price != null && svc.discounted_price < svc.price
+          ? svc.discounted_price
+          : svc.price;
+      addToCart({ service_id: svc.id, salon_id: salonId, quantity: 1, unit_price: unitPrice });
+    }
   };
 
   const toggleSub = (id: string) => setOpenSubs((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -130,8 +136,8 @@ export function SalonServicesScreen() {
           {salonName ?? 'Services'}
         </Text>
         <View style={styles.headerSpacer} />
-        <Pressable onPress={() => navigation.navigate('Cart')}>
-          <Ionicons color={colors.heading} name="cart-outline" size={24} />
+        <Pressable onPress={() => navigation.navigate('ServiceCart')}>
+          <Ionicons color={colors.heading} name="basket-outline" size={24} />
         </Pressable>
       </View>
 

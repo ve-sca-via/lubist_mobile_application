@@ -16,6 +16,7 @@ import {
   useClearCart,
   useValidateCoupon,
   useAvailableCoupons,
+  usePublicConfigs,
   type RazorpayOrder,
   type CouponValidationResult,
 } from '@/services/api/hooks/useBookingAPI';
@@ -63,6 +64,7 @@ export function CheckoutScreen() {
   const { mutate: clearCart, isPending: isClearingCart } = useClearCart();
   const { mutate: validateCoupon, isPending: isValidatingCoupon } = useValidateCoupon();
   const { data: availableCoupons } = useAvailableCoupons(salonId ?? cart.data?.salon_id ?? undefined);
+  const { data: configs } = usePublicConfigs();
 
   const [order, setOrder] = useState<RazorpayOrder | null>(null);
   const [payVisible, setPayVisible] = useState(false);
@@ -78,12 +80,31 @@ export function CheckoutScreen() {
   const cartBusy = isUpdatingItem || isRemovingItem || isClearingCart;
   const busy = isCreatingOrder || isCheckingOut;
 
+  // Original (pre-sale) service total — the base the convenience fee is charged on.
+  const originalServicesTotal = items.reduce(
+    (sum, item) =>
+      sum + (Number(item.service_details?.price) || Number(item.unit_price) || 0) * (item.quantity || 1),
+    0,
+  );
+  // Automatic salon-sale discount (original - post-sale cart total).
+  const saleDiscount = Math.max(0, originalServicesTotal - serviceTotal);
+
+  // Convenience fee (paid online now) from config; matches the web checkout.
+  const convenienceFeePercentage = configs?.convenience_fee_percentage;
+  const convenienceFee = convenienceFeePercentage
+    ? Math.round((originalServicesTotal * convenienceFeePercentage) / 100 * 100) / 100
+    : 0;
+
   // Breakdown is the source of truth when a coupon is applied.
   const breakdown = appliedCoupon?.valid ? appliedCoupon.breakdown : null;
   const couponServiceDiscount = breakdown?.discount_amount ?? 0;
   const couponFeeDiscount = breakdown?.convenience_fee_discount ?? 0;
   const couponSavings = couponServiceDiscount + couponFeeDiscount;
   const serviceDue = breakdown?.service_total_due ?? serviceTotal;
+
+  const feeBase = breakdown?.convenience_fee_base ?? convenienceFee;
+  const feeDue = breakdown?.convenience_fee_due ?? convenienceFee;   // Pay now (online)
+  const grandTotal = breakdown?.total_amount ?? serviceTotal + convenienceFee;
 
   // Clear the applied coupon whenever cart contents change — discount depends on the cart.
   const cartItemCount = cart.data?.item_count;
@@ -264,26 +285,46 @@ export function CheckoutScreen() {
             ))}
             <View style={styles.priceDivider} />
             <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>Service subtotal</Text>
-              <Text style={styles.priceValue}>{priceText(serviceTotal)}</Text>
+              <Text style={styles.priceLabel}>Service total</Text>
+              <Text style={styles.priceValue}>{priceText(originalServicesTotal)}</Text>
             </View>
+            {saleDiscount > 0 ? (
+              <View style={styles.priceRow}>
+                <Text style={styles.priceLabel}>Salon sale</Text>
+                <Text style={styles.discountValue}>-{priceText(saleDiscount)}</Text>
+              </View>
+            ) : null}
             {couponServiceDiscount > 0 ? (
               <View style={styles.priceRow}>
                 <Text style={styles.priceLabel}>Coupon discount</Text>
                 <Text style={styles.discountValue}>-{priceText(couponServiceDiscount)}</Text>
               </View>
             ) : null}
+            <View style={styles.priceRow}>
+              <Text style={styles.priceLabel}>Convenience fee</Text>
+              <Text style={styles.priceValue}>{priceText(feeBase)}</Text>
+            </View>
             {couponFeeDiscount > 0 ? (
               <View style={styles.priceRow}>
                 <Text style={styles.priceLabel}>Fee discount</Text>
                 <Text style={styles.discountValue}>-{priceText(couponFeeDiscount)}</Text>
               </View>
             ) : null}
+            {couponSavings > 0 ? (
+              <View style={styles.couponSaveBadge}>
+                <Text style={styles.couponSaveText}>You save {priceText(couponSavings)}</Text>
+              </View>
+            ) : null}
             <View style={styles.priceDivider} />
             <View style={styles.priceRow}>
-              <Text style={styles.totalLabel}>Pay at salon</Text>
-              <Text style={styles.totalValue}>{priceText(serviceDue)}</Text>
+              <Text style={styles.subtotalLabel}>Total</Text>
+              <Text style={styles.subtotalValue}>{priceText(grandTotal)}</Text>
             </View>
+            <View style={styles.priceRow}>
+              <Text style={styles.totalLabel}>Pay now</Text>
+              <Text style={styles.totalValue}>{priceText(feeDue)}</Text>
+            </View>
+            <Text style={styles.payAtSalonNote}>Pay {priceText(serviceDue)} at the salon after your appointment</Text>
           </View>
         </View>
 
@@ -330,11 +371,6 @@ export function CheckoutScreen() {
                 {couponMessage.text}
               </Text>
             ) : null}
-            {couponSavings > 0 ? (
-              <View style={styles.couponSaveBadge}>
-                <Text style={styles.couponSaveText}>You save {priceText(couponSavings)}</Text>
-              </View>
-            ) : null}
 
             {!appliedCoupon?.valid && (availableCoupons?.length ?? 0) > 0 ? (
               <View style={styles.availableList}>
@@ -369,8 +405,8 @@ export function CheckoutScreen() {
         <View style={styles.noteCard}>
           <Ionicons color={colors.gold} name="information-circle-outline" size={18} />
           <Text style={styles.noteText}>
-            You pay a small convenience fee + GST online now to confirm the booking. The service
-            amount ({priceText(serviceDue)}) is paid at the salon after your appointment.
+            The convenience fee confirms your booking and is paid online now. The service amount is
+            paid directly at the salon after your appointment.
           </Text>
         </View>
 
@@ -570,8 +606,11 @@ const styles = StyleSheet.create({
   stepperValue: { color: colors.heading, fontFamily: 'Inter_500Medium', fontSize: 14, minWidth: 20, textAlign: 'center' },
   removeBtn: { padding: 4 },
   priceDivider: { backgroundColor: colors.divider, height: 1 },
+  subtotalLabel: { color: colors.heading, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  subtotalValue: { color: colors.heading, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   totalLabel: { color: colors.heading, fontFamily: 'Montserrat_600SemiBold', fontSize: 18, letterSpacing: -0.2 },
   totalValue: { color: colors.gold, fontFamily: 'Montserrat_600SemiBold', fontSize: 18, letterSpacing: -0.2 },
+  payAtSalonNote: { color: colors.text, fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: -4 },
   noteCard: {
     alignItems: 'flex-start',
     backgroundColor: colors.card,

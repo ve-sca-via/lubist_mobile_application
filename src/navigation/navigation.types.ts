@@ -63,13 +63,19 @@ export type ClientTabParamList = {
       }
     | undefined;
   Bookings: undefined;
-  Saved: undefined;
+  // Launcher tab (labelled "Cart"): pressing it pushes the product Cart stack
+  // screen rather than rendering its own screen, so the cart keeps its
+  // pushed/back UX. Named distinctly from the stack's `Cart` route to avoid
+  // duplicate-route-name ambiguity when navigating.
+  CartTab: undefined;
   Shopping: undefined;
 };
 
 export type ClientStackParamList = {
   Tabs: undefined;
   Profile: undefined;
+  // Saved salons/products. Opened from the Home heart icon (was a bottom tab).
+  Saved: undefined;
   SalonDetails: {
     salon?: SalonRouteData;
   };
@@ -102,6 +108,7 @@ export type ClientStackParamList = {
     productName?: string;
   };
   Cart: undefined;
+  ServiceCart: undefined;
   MyReviews: undefined;
   Offers: undefined;
   WebPage: {

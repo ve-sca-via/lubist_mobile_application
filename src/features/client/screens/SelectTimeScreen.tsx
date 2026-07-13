@@ -43,8 +43,6 @@ function buildDates(count = 14) {
   });
 }
 
-const priceText = (v: number) => `₹${Math.round(v)}`;
-
 export function SelectTimeScreen() {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<Route>();
@@ -85,7 +83,6 @@ export function SelectTimeScreen() {
   const isToday = selectedDate === toYMD(dates[0]);
 
   const items = cart.data?.items ?? [];
-  const total = cart.data?.total_amount ?? 0;
   const canContinue = selectedTimes.length > 0 && items.length > 0;
 
   return (
@@ -159,29 +156,6 @@ export function SelectTimeScreen() {
                 })}
               </View>
             )}
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.billTitle}>Bill Details</Text>
-          {items.map((item) => (
-            <View key={item.id} style={styles.billRow}>
-              <Text numberOfLines={1} style={styles.billLabel}>
-                {item.service_details?.name ?? 'Service'}
-                {item.quantity > 1 ? ` × ${item.quantity}` : ''}
-              </Text>
-              <Text style={styles.billValue}>{priceText(item.line_total)}</Text>
-            </View>
-          ))}
-          <View style={styles.billTotalRow}>
-            <Text style={styles.billTotalLabel}>Service Total</Text>
-            <Text style={styles.billTotalValue}>{priceText(total)}</Text>
-          </View>
-          <View style={styles.noteBox}>
-            <Text style={styles.noteText}>
-              A small convenience fee is paid online at checkout; the service amount is paid at the
-              salon.
-            </Text>
           </View>
         </View>
       </ScrollView>
@@ -266,15 +240,6 @@ const styles = StyleSheet.create({
   timeSlotSelected: { backgroundColor: colors.iconDark, borderColor: colors.iconDark },
   timeText: { color: colors.ink, fontFamily: 'Poppins_400Regular', fontSize: 14 },
   timeTextSelected: { color: colors.white },
-  billTitle: { color: colors.ink, fontFamily: 'Montserrat_600SemiBold', fontSize: 20 },
-  billRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10 },
-  billLabel: { color: colors.muted2, flex: 1, fontFamily: 'Montserrat_400Regular', fontSize: 15, paddingRight: 12 },
-  billValue: { color: colors.ink, fontFamily: 'Montserrat_400Regular', fontSize: 15 },
-  billTotalRow: { alignItems: 'center', borderTopColor: colors.border, borderTopWidth: 1, flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, paddingTop: 10 },
-  billTotalLabel: { color: colors.ink, fontFamily: 'Montserrat_700Bold', fontSize: 17 },
-  billTotalValue: { color: colors.ink, fontFamily: 'Montserrat_700Bold', fontSize: 17 },
-  noteBox: { backgroundColor: colors.circleBtn, borderColor: colors.noteBorder, borderRadius: 8, borderWidth: 1, marginTop: 12, padding: 12 },
-  noteText: { color: colors.muted2, fontFamily: 'Montserrat_400Regular', fontSize: 12, lineHeight: 16 },
   ctaShell: {
     backgroundColor: colors.ctaShell,
     borderTopColor: 'rgba(196, 199, 199, 0.2)',

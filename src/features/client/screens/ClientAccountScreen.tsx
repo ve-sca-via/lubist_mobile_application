@@ -1,15 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import type {
-  ClientStackParamList,
-  ClientTabParamList,
-} from '@/navigation/navigation.types';
+import type { ClientStackParamList } from '@/navigation/navigation.types';
 import { useAuth } from '@/store/AuthContext';
 import {
   useFavorites,
@@ -54,7 +50,7 @@ const colors = {
   segmentBg: '#F0E0D1',
 };
 
-type SavedNavigation = BottomTabNavigationProp<ClientTabParamList>;
+type SavedNavigation = NativeStackNavigationProp<ClientStackParamList>;
 
 function salonLocation(s: FavoriteItem) {
   return [s.city, s.state].filter(Boolean).join(', ') || 'Salon';
@@ -62,7 +58,6 @@ function salonLocation(s: FavoriteItem) {
 
 export function ClientAccountScreen() {
   const navigation = useNavigation<SavedNavigation>();
-  const parent = navigation.getParent<NativeStackNavigationProp<ClientStackParamList>>();
   const { isAuthenticated, user } = useAuth();
   const canFavorite = isAuthenticated && !user?.guest;
   const [tab, setTab] = useState<Tab>('salons');
@@ -77,10 +72,10 @@ export function ClientAccountScreen() {
   const favoriteProducts = productFavoritesQuery.data?.favorites ?? [];
 
   const openProduct = (p: Product) =>
-    parent?.navigate('ProductDetail', { productId: p.id, productName: p.brand ?? p.name });
+    navigation.navigate('ProductDetail', { productId: p.id, productName: p.brand ?? p.name });
 
   const openSalon = (s: FavoriteItem) =>
-    parent?.navigate('SalonDetails', {
+    navigation.navigate('SalonDetails', {
       salon: {
         id: favoriteSalonId(s) ?? '',
         name: s.business_name ?? 'Salon',
@@ -99,7 +94,7 @@ export function ClientAccountScreen() {
             <Ionicons color={colors.gold} name="heart-outline" size={26} />
           </View>
           <Text style={styles.stateTitle}>Sign in to see your saved salons</Text>
-          <Pressable onPress={() => parent?.navigate('Profile')} style={styles.stateBtn}>
+          <Pressable onPress={() => navigation.navigate('Profile')} style={styles.stateBtn}>
             <Text style={styles.stateBtnText}>Go to Profile</Text>
           </Pressable>
         </View>
@@ -190,7 +185,7 @@ export function ClientAccountScreen() {
             <Ionicons color={colors.gold} name="bag-handle-outline" size={26} />
           </View>
           <Text style={styles.stateTitle}>Sign in to see your saved products</Text>
-          <Pressable onPress={() => parent?.navigate('Profile')} style={styles.stateBtn}>
+          <Pressable onPress={() => navigation.navigate('Profile')} style={styles.stateBtn}>
             <Text style={styles.stateBtnText}>Go to Profile</Text>
           </Pressable>
         </View>
@@ -264,8 +259,15 @@ export function ClientAccountScreen() {
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Saved</Text>
-        <Pressable hitSlop={8} onPress={() => parent?.navigate('Profile')}>
+        <View style={styles.headerLeft}>
+          {navigation.canGoBack() ? (
+            <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
+              <Ionicons color={colors.heading} name="arrow-back" size={18} />
+            </Pressable>
+          ) : null}
+          <Text style={styles.headerTitle}>Saved</Text>
+        </View>
+        <Pressable hitSlop={8} onPress={() => navigation.navigate('Profile')}>
           <Image source={avatar} style={styles.avatar} />
         </Pressable>
       </View>
@@ -311,6 +313,19 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 1,
     shadowRadius: 20,
+  },
+  headerLeft: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  backButton: {
+    alignItems: 'center',
+    backgroundColor: colors.cardCream2,
+    borderRadius: 12,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
   },
   headerTitle: {
     color: colors.heading,

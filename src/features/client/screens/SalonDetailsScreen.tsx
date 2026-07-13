@@ -104,6 +104,7 @@ function priceText(value: number) {
 }
 
 const HERO_WIDTH = Dimensions.get('window').width;
+const HERO_AUTOPLAY_INTERVAL_MS = 4000;
 
 export function SalonDetailsScreen() {
   const navigation = useNavigation<Navigation>();
@@ -210,6 +211,20 @@ export function SalonDetailsScreen() {
     setHeroIndex(0);
     heroScrollRef.current?.scrollTo({ animated: false, x: 0 });
   }, [salonId]);
+
+  // Auto-advance the hero carousel every few seconds, looping back to the
+  // start after the last image. Only runs when there is more than one image.
+  useEffect(() => {
+    if (heroImages.length <= 1) return;
+    const timer = setInterval(() => {
+      setHeroIndex((current) => {
+        const next = (current + 1) % heroImages.length;
+        heroScrollRef.current?.scrollTo({ animated: true, x: next * HERO_WIDTH });
+        return next;
+      });
+    }, HERO_AUTOPLAY_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [heroImages.length]);
 
   const handleThumbnailSelect = (index: number) => {
     setHeroIndex(index);

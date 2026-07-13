@@ -9,6 +9,8 @@ import { BookingConfirmedScreen } from '@/features/client/screens/BookingConfirm
 import { ProductCatalogScreen } from '@/features/client/screens/ProductCatalogScreen';
 import { ProductDetailScreen } from '@/features/client/screens/ProductDetailScreen';
 import { CartScreen } from '@/features/client/screens/CartScreen';
+import { ServiceCartScreen } from '@/features/client/screens/ServiceCartScreen';
+import { ClientAccountScreen } from '@/features/client/screens/ClientAccountScreen';
 import { ProfileScreen } from '@/features/client/screens/ProfileScreen';
 import { MyReviewsScreen } from '@/features/client/screens/MyReviewsScreen';
 import { ClientOffersScreen } from '@/features/client/screens/ClientOffersScreen';
@@ -22,6 +24,7 @@ export function ClientStackNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen component={ClientNavigator} name="Tabs" />
+      <Stack.Screen component={ClientAccountScreen} name="Saved" />
       <Stack.Screen component={ProfileScreen} name="Profile" />
       <Stack.Screen component={SalonDetailsScreen} name="SalonDetails" />
       <Stack.Screen component={SalonServicesScreen} name="SalonServices" />
@@ -31,6 +34,7 @@ export function ClientStackNavigator() {
       <Stack.Screen component={ProductCatalogScreen} name="ProductCatalog" />
       <Stack.Screen component={ProductDetailScreen} name="ProductDetail" />
       <Stack.Screen component={CartScreen} name="Cart" />
+      <Stack.Screen component={ServiceCartScreen} name="ServiceCart" />
       <Stack.Screen component={MyReviewsScreen} name="MyReviews" />
       <Stack.Screen component={ClientOffersScreen} name="Offers" />
       <Stack.Screen component={WebPageScreen} name="WebPage" />

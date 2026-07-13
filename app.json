@@ -32,6 +32,10 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "runtimeVersion": {
@@ -59,6 +63,9 @@
     },
     "updates": {
       "url": "https://u.expo.dev/0c5d02f8-8571-42f1-a61a-5aea92ddd8a5"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     }
   }
 }

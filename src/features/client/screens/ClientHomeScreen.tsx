@@ -132,6 +132,9 @@ export function ClientHomeScreen() {
   const { data: profile } = useGetUserProfile();
   const initials = initialsOf(profile?.user?.full_name);
 
+  // Saved salons/products screen (the cart lives in the bottom nav now).
+  const openSaved = () => parent?.navigate('Saved');
+
   // Resolve a banner's tap target: external URLs open in the browser; recognised
   // in-app links (offers/salon/product/catalog/discover) navigate within the app.
   const handleBannerPress = (banner: Banner) => {
@@ -241,7 +244,7 @@ export function ClientHomeScreen() {
         initials={initials}
         onPressLocation={refetchLocation}
         onPressProfile={() => parent?.navigate('Profile')}
-        onPressOffers={openOffers}
+        onPressSaved={openSaved}
       />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -309,14 +312,14 @@ function Header({
   initials,
   onPressLocation,
   onPressProfile,
-  onPressOffers,
+  onPressSaved,
 }: {
   label: string;
   denied: boolean;
   initials: string;
   onPressLocation: () => void;
   onPressProfile: () => void;
-  onPressOffers: () => void;
+  onPressSaved: () => void;
 }) {
   return (
     <View style={styles.header}>
@@ -330,9 +333,14 @@ function Header({
       </Pressable>
 
       <View style={styles.headerActions}>
-        <Pressable style={styles.offersButton} onPress={onPressOffers}>
-          <Ionicons color={colors.gold} name="pricetag-outline" size={14} />
-          <Text style={styles.offersButtonText}>Offers</Text>
+        <Pressable
+          accessibilityLabel="Saved"
+          accessibilityRole="button"
+          hitSlop={6}
+          onPress={onPressSaved}
+          style={styles.cartIconButton}
+        >
+          <Ionicons color={colors.heading} name="heart-outline" size={20} />
         </Pressable>
         <Pressable hitSlop={8} onPress={onPressProfile}>
           <View style={styles.avatar}>
@@ -977,23 +985,17 @@ const styles = StyleSheet.create({
   headerActions: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
-  offersButton: {
+  cartIconButton: {
     alignItems: 'center',
     backgroundColor: colors.white,
     borderColor: colors.goldBorder,
     borderRadius: 12,
     borderWidth: 1,
-    flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-  },
-  offersButtonText: {
-    color: colors.gold,
-    fontFamily: 'Inter_500Medium',
-    fontSize: 14,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
   },
   avatar: {
     alignItems: 'center',

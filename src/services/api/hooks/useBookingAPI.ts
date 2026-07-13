@@ -88,6 +88,14 @@ export interface AvailableCoupon {
   subtitle?: string | null;
 }
 
+export interface PublicConfigs {
+  convenience_fee_percentage?: number;
+  cancellation_window_hours?: number;
+  max_booking_advance_days?: number;
+  registration_fee_amount?: number;
+  [k: string]: any;
+}
+
 export interface Booking {
   id: string;
   booking_number: string;
@@ -132,9 +140,50 @@ export function useCart() {
 export function useAddToCart() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { service_id: string; salon_id?: string; quantity?: number }) =>
-      await apiPost('/api/v1/customers/cart', { quantity: 1, ...data }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['cart'] }),
+    // `unit_price` is optional and used only to keep the optimistic cart total
+    // accurate until the server response settles; the backend ignores it.
+    mutationFn: async (data: {
+      service_id: string;
+      salon_id?: string;
+      quantity?: number;
+      unit_price?: number;
+    }) => await apiPost('/api/v1/customers/cart', { quantity: 1, ...data }),
+    // Optimistically add the service so the "ADD" button flips to "ADDED"
+    // instantly, without waiting for the POST + cart refetch round-trip.
+    onMutate: async (data) => {
+      await qc.cancelQueries({ queryKey: ['cart'] });
+      const previous = qc.getQueryData<CartResponse>(['cart']);
+      qc.setQueryData<CartResponse>(['cart'], (old) => {
+        const base: CartResponse =
+          old ?? { success: true, items: [], total_amount: 0, item_count: 0 };
+        // Guard against duplicate optimistic lines for the same service.
+        if (base.items.some((i) => i.service_id === data.service_id)) return base;
+        const quantity = data.quantity ?? 1;
+        const unitPrice = data.unit_price ?? 0;
+        const optimisticItem: CartItem = {
+          id: `optimistic-${data.service_id}`,
+          service_id: data.service_id,
+          salon_id: data.salon_id ?? base.salon_id ?? '',
+          quantity,
+          unit_price: unitPrice,
+          line_total: unitPrice * quantity,
+          service_details: {},
+          salon_details: {},
+        };
+        return {
+          ...base,
+          items: [...base.items, optimisticItem],
+          item_count: base.item_count + quantity,
+          total_amount: base.total_amount + unitPrice * quantity,
+          salon_id: base.salon_id ?? data.salon_id ?? null,
+        };
+      });
+      return { previous };
+    },
+    onError: (_err, _data, ctx) => {
+      if (ctx?.previous) qc.setQueryData(['cart'], ctx.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['cart'] }),
   });
 }
 
@@ -151,7 +200,27 @@ export function useRemoveCartItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (itemId: string) => await apiDelete(`/api/v1/customers/cart/${itemId}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['cart'] }),
+    // Optimistically drop the line so the button flips back to "ADD" instantly.
+    onMutate: async (itemId) => {
+      await qc.cancelQueries({ queryKey: ['cart'] });
+      const previous = qc.getQueryData<CartResponse>(['cart']);
+      qc.setQueryData<CartResponse>(['cart'], (old) => {
+        if (!old) return old;
+        const removed = old.items.find((i) => i.id === itemId);
+        if (!removed) return old;
+        return {
+          ...old,
+          items: old.items.filter((i) => i.id !== itemId),
+          item_count: Math.max(0, old.item_count - removed.quantity),
+          total_amount: Math.max(0, old.total_amount - removed.line_total),
+        };
+      });
+      return { previous };
+    },
+    onError: (_err, _itemId, ctx) => {
+      if (ctx?.previous) qc.setQueryData(['cart'], ctx.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['cart'] }),
   });
 }
 
@@ -191,6 +260,23 @@ export function useAvailableCoupons(salonId?: string) {
     queryFn: async () => {
       const qs = salonId ? `?salon_id=${encodeURIComponent(salonId)}` : '';
       return await apiGet<AvailableCoupon[]>(`/api/v1/customers/available-coupons${qs}`);
+    },
+  });
+}
+
+/**
+ * Public system configs (convenience fee %, booking limits, etc.). Non-sensitive
+ * values safe to expose to the client. Cached for 5 minutes like the web app.
+ */
+export function usePublicConfigs() {
+  return useQuery({
+    queryKey: ['publicConfigs'],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const res = await apiGet<{ success: boolean; configs: PublicConfigs }>(
+        '/api/v1/salons/config/public',
+      );
+      return res.configs ?? {};
     },
   });
 }
