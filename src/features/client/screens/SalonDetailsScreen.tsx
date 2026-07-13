@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Image,
   Linking,
   Pressable,
@@ -14,7 +15,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import type { ImageSourcePropType } from 'react-native';
+import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { ClientStackParamList } from '@/navigation/navigation.types';
@@ -102,6 +103,8 @@ function priceText(value: number) {
   return `₹${Math.round(value)}`;
 }
 
+const HERO_WIDTH = Dimensions.get('window').width;
+
 export function SalonDetailsScreen() {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<SalonRoute>();
@@ -179,6 +182,8 @@ export function SalonDetailsScreen() {
   }, [servicesQuery.data]);
 
   const scrollRef = useRef<ScrollView>(null);
+  const heroScrollRef = useRef<ScrollView>(null);
+  const [heroIndex, setHeroIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<SectionKey>('services');
   const [sectionOffsets, setSectionOffsets] = useState<Record<SectionKey, number>>({
     about: 0,
@@ -196,8 +201,21 @@ export function SalonDetailsScreen() {
   const coverImages = (salon?.cover_images?.filter(Boolean) ?? [])
     .map((u) => resolveImageUrl(u))
     .filter((u): u is string => !!u);
-  const heroUri = coverImages[0] ?? resolveImageUrl(salon?.logo_url) ?? routeSalon?.heroImage ?? null;
-  const heroSource: ImageSourcePropType = heroUri ? { uri: heroUri } : heroFallback;
+  const singleFallbackUri = resolveImageUrl(salon?.logo_url) ?? routeSalon?.heroImage ?? null;
+  const heroImages = coverImages.length > 0 ? coverImages : singleFallbackUri ? [singleFallbackUri] : [];
+
+  // Reset the hero pager whenever we land on a different salon (this screen
+  // instance can be reused when navigating between related salons).
+  useEffect(() => {
+    setHeroIndex(0);
+    heroScrollRef.current?.scrollTo({ animated: false, x: 0 });
+  }, [salonId]);
+
+  const handleThumbnailSelect = (index: number) => {
+    setHeroIndex(index);
+    heroScrollRef.current?.scrollTo({ animated: true, x: index * HERO_WIDTH });
+  };
+
   const locationText =
     [salon?.address, salon?.city, salon?.state].filter(Boolean).join(', ') ||
     routeSalon?.location ||
@@ -277,8 +295,16 @@ export function SalonDetailsScreen() {
     <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safeArea}>
       <View style={styles.screen}>
         <ScrollView contentContainerStyle={styles.content} ref={scrollRef} showsVerticalScrollIndicator={false}>
-          <SalonHero onBackPress={() => navigation.goBack()} source={heroSource} />
-          {coverImages.length > 1 ? <ThumbnailGallery images={coverImages} /> : null}
+          <SalonHero
+            activeIndex={heroIndex}
+            images={heroImages}
+            onBackPress={() => navigation.goBack()}
+            onIndexChange={setHeroIndex}
+            scrollRef={heroScrollRef}
+          />
+          {heroImages.length > 1 ? (
+            <ThumbnailGallery activeIndex={heroIndex} images={heroImages} onSelect={handleThumbnailSelect} />
+          ) : null}
 
           <SalonInfo
             name={name}
@@ -355,34 +381,85 @@ export function SalonDetailsScreen() {
   );
 }
 
-function SalonHero({ onBackPress, source }: { onBackPress: () => void; source: ImageSourcePropType }) {
+function SalonHero({
+  images,
+  activeIndex,
+  onIndexChange,
+  onBackPress,
+  scrollRef,
+}: {
+  images: string[];
+  activeIndex: number;
+  onIndexChange: (index: number) => void;
+  onBackPress: () => void;
+  scrollRef: React.RefObject<ScrollView | null>;
+}) {
+  const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const index = Math.round(e.nativeEvent.contentOffset.x / HERO_WIDTH);
+    if (index !== activeIndex) onIndexChange(index);
+  };
+
   return (
     <View style={styles.heroWrap}>
-      <Image source={source} style={styles.heroImage} />
-      <View style={styles.heroOverlay} />
+      {images.length > 1 ? (
+        <ScrollView
+          horizontal
+          onMomentumScrollEnd={onMomentumScrollEnd}
+          pagingEnabled
+          ref={scrollRef}
+          showsHorizontalScrollIndicator={false}
+        >
+          {images.map((uri, index) => (
+            <Image key={`hero-${index}`} source={{ uri }} style={[styles.heroImage, { width: HERO_WIDTH }]} />
+          ))}
+        </ScrollView>
+      ) : (
+        <Image source={images[0] ? { uri: images[0] } : heroFallback} style={styles.heroImage} />
+      )}
+      <View pointerEvents="none" style={styles.heroOverlay} />
       <Pressable onPress={onBackPress} style={styles.heroBackButton}>
         <Ionicons color={colors.white} name="arrow-back" size={22} />
       </Pressable>
+      {images.length > 1 ? (
+        <View pointerEvents="none" style={styles.heroDotsRow}>
+          {images.map((_, index) => (
+            <View key={`hero-dot-${index}`} style={[styles.heroDot, index === activeIndex && styles.heroDotActive]} />
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
 
-function ThumbnailGallery({ images }: { images: string[] }) {
+function ThumbnailGallery({
+  images,
+  activeIndex,
+  onSelect,
+}: {
+  images: string[];
+  activeIndex: number;
+  onSelect: (index: number) => void;
+}) {
   const shown = images.slice(0, 5);
   const extra = images.length - shown.length;
   return (
     <ScrollView contentContainerStyle={styles.thumbnailRow} horizontal showsHorizontalScrollIndicator={false}>
       {shown.map((uri, index) => {
         const isLast = index === shown.length - 1 && extra > 0;
+        const isActive = index === activeIndex;
         return (
-          <View key={`thumb-${index}`} style={styles.thumbnailWrap}>
+          <Pressable
+            key={`thumb-${index}`}
+            onPress={() => onSelect(index)}
+            style={[styles.thumbnailWrap, isActive && styles.thumbnailWrapActive]}
+          >
             <Image source={{ uri }} style={styles.thumbnail} />
             {isLast ? (
               <View style={styles.thumbnailOverlay}>
                 <Text style={styles.thumbnailOverlayText}>+{extra} More</Text>
               </View>
             ) : null}
-          </View>
+          </Pressable>
         );
       })}
     </ScrollView>
@@ -829,17 +906,42 @@ const styles = StyleSheet.create({
     top: 54,
     width: 40,
   },
+  heroDotsRow: {
+    alignItems: 'center',
+    bottom: 12,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+  },
+  heroDot: {
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    borderRadius: 4,
+    height: 6,
+    width: 6,
+  },
+  heroDotActive: {
+    backgroundColor: colors.white,
+    width: 16,
+  },
   thumbnailRow: {
     gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
   thumbnailWrap: {
+    borderColor: 'transparent',
     borderRadius: 12,
+    borderWidth: 2,
     height: 70,
     overflow: 'hidden',
     position: 'relative',
     width: 70,
+  },
+  thumbnailWrapActive: {
+    borderColor: colors.gold,
   },
   thumbnail: {
     height: '100%',

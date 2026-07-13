@@ -65,7 +65,7 @@ export function SalonServicesScreen() {
 
   const [search, setSearch] = useState('');
   const [selectedCat, setSelectedCat] = useState<string | null>(null);
-  const [closedSubs, setClosedSubs] = useState<Record<string, boolean>>({});
+  const [openSubs, setOpenSubs] = useState<Record<string, boolean>>({});
 
   const servicesQuery = useSalonServices(salonId);
   const cart = useCart();
@@ -118,7 +118,7 @@ export function SalonServicesScreen() {
     else addToCart({ service_id: svc.id, salon_id: salonId, quantity: 1 });
   };
 
-  const toggleSub = (id: string) => setClosedSubs((prev) => ({ ...prev, [id]: !prev[id] }));
+  const toggleSub = (id: string) => setOpenSubs((prev) => ({ ...prev, [id]: !prev[id] }));
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
@@ -201,7 +201,7 @@ export function SalonServicesScreen() {
                 <Text style={styles.emptyText}>No services match your search.</Text>
               ) : (
                 groups.map((group) => {
-                  const isOpen = !closedSubs[group.id];
+                  const isOpen = !!openSubs[group.id];
                   return (
                     <View key={group.id} style={styles.accordion}>
                       <Pressable onPress={() => toggleSub(group.id)} style={styles.accordionHeader}>
