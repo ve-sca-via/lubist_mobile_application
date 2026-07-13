@@ -252,7 +252,7 @@ export function ClientHomeScreen() {
       >
         <HeroCarousel onPressBanner={handleBannerPress} />
         <SearchBar onSubmit={openDiscover} />
-        <AppointmentsCard />
+        <AppointmentsCard onPress={() => navigation.navigate('Bookings')} />
 
         {offers.length > 0 ? (
           <>
@@ -465,9 +465,9 @@ function SearchBar({ onSubmit }: { onSubmit: (query?: string) => void }) {
   );
 }
 
-function AppointmentsCard() {
+function AppointmentsCard({ onPress }: { onPress: () => void }) {
   return (
-    <Pressable style={styles.appointmentsCard}>
+    <Pressable onPress={onPress} style={styles.appointmentsCard}>
       <View style={styles.appointmentsLeft}>
         <View style={styles.appointmentsIcon}>
           <Ionicons color={colors.apptIcon} name="calendar-outline" size={18} />
