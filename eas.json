@@ -12,7 +12,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://lubist-p7aah.ondigitalocean.app"
+        "EXPO_PUBLIC_API_URL": "https://salon-backend-staging.up.railway.app"
       },
       "channel": "preview"
     },
@@ -21,6 +21,17 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://lubist-p7aah.ondigitalocean.app"
+      },
+      "channel": "production"
+    },
+    "production-store": {
+      "autoIncrement": true,
+      "distribution": "store",
+      "android": {
+        "buildType": "app-bundle"
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://lubist-p7aah.ondigitalocean.app"

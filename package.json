@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "ota": "eas update --branch production",
     "build:prod": "eas build --platform android --profile production",
+    "build:store": "eas build --platform android --profile production-store",
     "build:preview": "eas build --platform android --profile preview"
   },
   "dependencies": {
