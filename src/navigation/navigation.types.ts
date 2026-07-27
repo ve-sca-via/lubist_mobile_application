@@ -38,6 +38,9 @@ export type AuthStackParamList = {
     verificationToken: string;
   };
   EmailLogin: undefined;
+  // Email-only signup (no phone OTP). Reachable from EmailLogin; the phone-first
+  // track uses `Signup`, which requires a phone verification token.
+  EmailSignup: undefined;
   ForgotPassword: undefined;
 };
 

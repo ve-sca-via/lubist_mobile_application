@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { ClientStackParamList } from '@/navigation/navigation.types';
 import { useAuth } from '@/store/AuthContext';
+import { EmailVerificationBanner } from '@/features/client/components/EmailVerificationBanner';
 import {
   useGetUserProfile,
   useUpdateUserProfile,
@@ -202,6 +203,7 @@ export function ProfileScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          <EmailVerificationBanner />
           <View style={styles.avatarBlock}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{initialsOf(user?.full_name)}</Text>

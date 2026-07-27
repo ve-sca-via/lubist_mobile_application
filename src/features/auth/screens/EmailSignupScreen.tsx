@@ -4,6 +4,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -12,13 +13,12 @@ import {
   Text,
   TextInput,
   View,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { AuthStackParamList } from '@/navigation/navigation.types';
 import { useAuth } from '@/store/AuthContext';
-import { useLogin } from '@/services/api/hooks/useAuthAPI';
+import { useSignup } from '@/services/api/hooks/useAuthAPI';
 
 const colors = {
   bgTop: '#FFF8F4',
@@ -31,6 +31,7 @@ const colors = {
   label: '#534433',
   inputBg: '#F6E5D7',
   inputBorder: '#F0E0D1',
+  divider: 'rgba(217, 195, 173, 0.5)',
   placeholder: 'rgba(83, 68, 51, 0.5)',
   ctaStart: '#F89E07',
   ctaEnd: '#FFB962',
@@ -38,36 +39,72 @@ const colors = {
   ctaText: '#FFFFFF',
   link: '#865300',
   backBtn: '#FFF1E6',
+  chipActive: '#F89E07',
+  chipText: '#534433',
 };
 
-type Navigation = NativeStackNavigationProp<AuthStackParamList, 'EmailLogin'>;
+type Gender = 'male' | 'female' | 'other';
+const GENDERS: { value: Gender; label: string }[] = [
+  { value: 'male', label: 'Male' },
+  { value: 'female', label: 'Female' },
+  { value: 'other', label: 'Other' },
+];
 
-export function EmailLoginScreen() {
+const MIN_PASSWORD_LENGTH = 8;
+
+type Navigation = NativeStackNavigationProp<AuthStackParamList, 'EmailSignup'>;
+
+export function EmailSignupScreen() {
   const { signIn } = useAuth();
   const navigation = useNavigation<Navigation>();
 
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [age, setAge] = useState('');
+  const [gender, setGender] = useState<Gender | null>(null);
 
-  const { mutate: loginUser, isPending } = useLogin();
-  const isValid = /^\S+@\S+\.\S+$/.test(email) && password.length >= 1 && !isPending;
+  const { mutate: registerUser, isPending } = useSignup();
 
-  const handleLogin = () => {
-    loginUser(
-      { email, password },
+  const ageNum = Number(age);
+  const isValid =
+    fullName.trim().length >= 2 &&
+    /^\S+@\S+\.\S+$/.test(email) &&
+    password.length >= MIN_PASSWORD_LENGTH &&
+    ageNum >= 13 &&
+    ageNum <= 120 &&
+    gender !== null;
+
+  const handleSignup = () => {
+    registerUser(
       {
-        onSuccess: (data) => {
-          // Logged in! Call signIn to update Context state
-          signIn(data.user || { role: 'client' }, {
-            access_token: data.access_token,
-            refresh_token: data.refresh_token
-          });
+        email: email.trim(),
+        password,
+        full_name: fullName.trim(),
+        // No phone here: this is the email-only track. Users add and verify a
+        // phone later from Profile, which keeps `phone_verified` meaningful.
+        age: ageNum,
+        gender: gender ?? undefined,
+        user_role: 'customer',
+      },
+      {
+        onSuccess: (response: any) => {
+          if (response?.access_token && response?.refresh_token) {
+            signIn(response.user || { email, full_name: fullName, role: 'customer' }, {
+              access_token: response.access_token,
+              refresh_token: response.refresh_token,
+            });
+          } else {
+            Alert.alert('Account created', 'Your account is ready. Please log in.', [
+              { text: 'OK', onPress: () => navigation.navigate('EmailLogin') },
+            ]);
+          }
         },
         onError: (error: any) => {
-          Alert.alert('Login Failed', error.message || 'Invalid email or password.');
-        }
-      }
+          Alert.alert('Signup Failed', error.message || 'Could not create account.');
+        },
+      },
     );
   };
 
@@ -88,17 +125,31 @@ export function EmailLoginScreen() {
             </Pressable>
 
             <View style={styles.heading}>
-              <Text style={styles.title}>Welcome back</Text>
-              <Text style={styles.subtitle}>Log in with your email and password.</Text>
+              <Text style={styles.title}>Create your account</Text>
+              <Text style={styles.subtitle}>Sign up with your email and password.</Text>
             </View>
 
             <View style={styles.card}>
-              <View style={styles.field}>
-                <Text style={styles.fieldLabel}>Email</Text>
+              <Field label="Full Name">
+                <View style={styles.inputWrap}>
+                  <Ionicons color={colors.muted} name="person-outline" size={18} />
+                  <TextInput
+                    autoCapitalize="words"
+                    onChangeText={setFullName}
+                    placeholder="Your full name"
+                    placeholderTextColor={colors.placeholder}
+                    style={styles.input}
+                    value={fullName}
+                  />
+                </View>
+              </Field>
+
+              <Field label="Email">
                 <View style={styles.inputWrap}>
                   <Ionicons color={colors.muted} name="mail-outline" size={18} />
                   <TextInput
                     autoCapitalize="none"
+                    autoComplete="email"
                     keyboardType="email-address"
                     onChangeText={setEmail}
                     placeholder="you@example.com"
@@ -107,16 +158,15 @@ export function EmailLoginScreen() {
                     value={email}
                   />
                 </View>
-              </View>
+              </Field>
 
-              <View style={styles.field}>
-                <Text style={styles.fieldLabel}>Password</Text>
+              <Field label="Password">
                 <View style={styles.inputWrap}>
                   <Ionicons color={colors.muted} name="lock-closed-outline" size={18} />
                   <TextInput
                     autoCapitalize="none"
                     onChangeText={setPassword}
-                    placeholder="Your password"
+                    placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
                     placeholderTextColor={colors.placeholder}
                     secureTextEntry={!showPassword}
                     style={styles.input}
@@ -130,22 +180,49 @@ export function EmailLoginScreen() {
                     />
                   </Pressable>
                 </View>
+              </Field>
+
+              <View style={styles.row}>
+                <View style={styles.ageCol}>
+                  <Field label="Age">
+                    <View style={styles.inputWrap}>
+                      <TextInput
+                        keyboardType="number-pad"
+                        maxLength={3}
+                        onChangeText={(v) => setAge(v.replace(/[^\d]/g, ''))}
+                        placeholder="25"
+                        placeholderTextColor={colors.placeholder}
+                        style={styles.input}
+                        value={age}
+                      />
+                    </View>
+                  </Field>
+                </View>
               </View>
 
-              <Pressable
-                onPress={() => navigation.navigate('ForgotPassword')}
-                style={styles.forgotWrap}
-              >
-                <Text style={styles.forgotText}>Forgot password?</Text>
-              </Pressable>
+              <Field label="Gender">
+                <View style={styles.genderRow}>
+                  {GENDERS.map((g) => (
+                    <Pressable
+                      key={g.value}
+                      onPress={() => setGender(g.value)}
+                      style={[styles.chip, gender === g.value && styles.chipActive]}
+                    >
+                      <Text style={[styles.chipText, gender === g.value && styles.chipTextActive]}>
+                        {g.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </Field>
 
               <Pressable
-                disabled={!isValid}
-                onPress={handleLogin}
+                disabled={!isValid || isPending}
+                onPress={handleSignup}
                 style={({ pressed }) => [
                   styles.ctaShadow,
-                  !isValid && styles.ctaDisabled,
-                  pressed && isValid && styles.ctaPressed,
+                  (!isValid || isPending) && styles.ctaDisabled,
+                  pressed && isValid && !isPending && styles.ctaPressed,
                 ]}
               >
                 <LinearGradient
@@ -154,14 +231,16 @@ export function EmailLoginScreen() {
                   start={{ x: 0, y: 0 }}
                   style={styles.cta}
                 >
-                  <Text style={styles.ctaText}>{isPending ? 'LOGGING IN...' : 'LOG IN'}</Text>
+                  <Text style={styles.ctaText}>
+                    {isPending ? 'CREATING ACCOUNT...' : 'CREATE ACCOUNT'}
+                  </Text>
                 </LinearGradient>
               </Pressable>
 
-              <View style={styles.signupRow}>
-                <Text style={styles.signupText}>New to Lubist? </Text>
-                <Pressable onPress={() => navigation.navigate('EmailSignup')}>
-                  <Text style={styles.signupLink}>Create account</Text>
+              <View style={styles.loginRow}>
+                <Text style={styles.loginText}>Already have an account? </Text>
+                <Pressable onPress={() => navigation.navigate('EmailLogin')}>
+                  <Text style={styles.loginLink}>Log in</Text>
                 </Pressable>
               </View>
             </View>
@@ -169,6 +248,15 @@ export function EmailLoginScreen() {
         </KeyboardAvoidingView>
       </LinearGradient>
     </SafeAreaView>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      {children}
+    </View>
   );
 }
 
@@ -184,7 +272,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    flexGrow: 1,
     paddingBottom: 40,
     paddingHorizontal: 20,
     paddingTop: 8,
@@ -199,7 +286,7 @@ const styles = StyleSheet.create({
   },
   heading: {
     marginBottom: 20,
-    marginTop: 24,
+    marginTop: 20,
   },
   title: {
     color: colors.heading,
@@ -251,18 +338,43 @@ const styles = StyleSheet.create({
     fontSize: 16,
     height: '100%',
   },
-  forgotWrap: {
-    alignSelf: 'flex-end',
-    marginBottom: 20,
+  row: {
+    flexDirection: 'row',
+    gap: 16,
   },
-  forgotText: {
-    color: colors.link,
+  ageCol: {
+    width: '40%',
+  },
+  genderRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  chip: {
+    alignItems: 'center',
+    backgroundColor: colors.inputBg,
+    borderColor: colors.inputBorder,
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    paddingVertical: 14,
+  },
+  chipActive: {
+    backgroundColor: colors.chipActive,
+    borderColor: colors.chipActive,
+  },
+  chipText: {
+    color: colors.chipText,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 14,
+  },
+  chipTextActive: {
+    color: colors.ctaText,
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 13,
   },
   ctaShadow: {
     borderRadius: 12,
     elevation: 8,
+    marginTop: 8,
     shadowColor: colors.ctaShadow,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 1,
@@ -286,18 +398,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 0.7,
   },
-  signupRow: {
+  loginRow: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: 20,
   },
-  signupText: {
+  loginText: {
     color: colors.muted,
     fontFamily: 'Inter_400Regular',
     fontSize: 14,
   },
-  signupLink: {
+  loginLink: {
     color: colors.link,
     fontFamily: 'Inter_600SemiBold',
     fontSize: 14,

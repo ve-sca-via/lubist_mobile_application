@@ -56,17 +56,41 @@ async function refreshSession(): Promise<boolean> {
   return refreshPromise;
 }
 
+// Endpoints that ESTABLISH a session rather than consume one. A 401 from these
+// means "wrong credentials", not "your token expired" — sending them through the
+// refresh-and-retry path below would wipe the stored session and report
+// "Session expired. Please log in again." instead of the real reason.
+// `/verify-phone/*` is deliberately absent: it runs on an authenticated user.
+const SESSION_ESTABLISHING_PATHS = [
+  '/api/v1/auth/login',
+  '/api/v1/auth/signup',
+  '/api/v1/auth/refresh',
+  '/api/v1/auth/password-reset',
+];
+
+function isSessionEstablishing(path: string): boolean {
+  return SESSION_ESTABLISHING_PATHS.some((prefix) => path.startsWith(prefix));
+}
+
 /**
  * Runs a request, and on 401 refreshes the session and retries ONCE.
  * `buildRequest` takes fresh headers each call, so the retry uses the NEW
  * access token (the previous implementation reused the stale expired token).
  */
 async function request<T>(
+  path: string,
   buildRequest: (headers: Record<string, string>) => Promise<Response>,
 ): Promise<T> {
-  const response = await buildRequest(await getAuthHeaders());
+  const headers = await getAuthHeaders();
+  const response = await buildRequest(headers);
 
-  if (response.status !== 401) {
+  // Only a 401 on a request we actually authenticated can mean the session
+  // died; without a token to expire, a 401 is just the server's answer.
+  if (
+    response.status !== 401 ||
+    isSessionEstablishing(path) ||
+    !headers['Authorization']
+  ) {
     return processValidResponse<T>(response);
   }
 
@@ -90,8 +114,16 @@ async function processValidResponse<T>(response: Response): Promise<T> {
     let errorDetail = `API request failed with status ${response.status}`;
     try {
       const errBody = await response.json();
-      if (errBody.detail) {
-        errorDetail = typeof errBody.detail === 'string' ? errBody.detail : JSON.stringify(errBody.detail);
+      // The backend's exception handlers rename FastAPI's `detail` to `message`
+      // (app/core/handlers.py), and validation failures arrive as an `errors`
+      // array instead. Read all three, or every failure shows the generic
+      // status-code text above and the real reason never reaches the user.
+      const fromErrors = Array.isArray(errBody.errors)
+        ? errBody.errors.map((e: any) => e?.message).filter(Boolean).join('\n')
+        : '';
+      const raw = errBody.message || errBody.detail || fromErrors;
+      if (raw) {
+        errorDetail = typeof raw === 'string' ? raw : JSON.stringify(raw);
       }
     } catch (e) {}
     throw new Error(errorDetail);
@@ -101,11 +133,11 @@ async function processValidResponse<T>(response: Response): Promise<T> {
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  return request<T>((headers) => fetch(`${env.apiBaseUrl}${path}`, { headers }));
+  return request<T>(path, (headers) => fetch(`${env.apiBaseUrl}${path}`, { headers }));
 }
 
 export async function apiPost<T>(path: string, body: any): Promise<T> {
-  return request<T>((headers) =>
+  return request<T>(path, (headers) =>
     fetch(`${env.apiBaseUrl}${path}`, {
       method: 'POST',
       headers,
@@ -115,7 +147,7 @@ export async function apiPost<T>(path: string, body: any): Promise<T> {
 }
 
 export async function apiPut<T>(path: string, body: any): Promise<T> {
-  return request<T>((headers) =>
+  return request<T>(path, (headers) =>
     fetch(`${env.apiBaseUrl}${path}`, {
       method: 'PUT',
       headers,
@@ -125,7 +157,7 @@ export async function apiPut<T>(path: string, body: any): Promise<T> {
 }
 
 export async function apiPatch<T>(path: string, body: any): Promise<T> {
-  return request<T>((headers) =>
+  return request<T>(path, (headers) =>
     fetch(`${env.apiBaseUrl}${path}`, {
       method: 'PATCH',
       headers,
@@ -135,7 +167,7 @@ export async function apiPatch<T>(path: string, body: any): Promise<T> {
 }
 
 export async function apiDelete<T>(path: string): Promise<T> {
-  return request<T>((headers) =>
+  return request<T>(path, (headers) =>
     fetch(`${env.apiBaseUrl}${path}`, {
       method: 'DELETE',
       headers,

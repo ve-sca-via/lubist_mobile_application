@@ -39,6 +39,7 @@ import {
 } from '@/services/api/hooks/useSalonsAPI';
 import { useBanners, bannerImageUri, type Banner } from '@/services/api/hooks/useBannersAPI';
 import { useAvailableCoupons, type AvailableCoupon } from '@/services/api/hooks/useBookingAPI';
+import { EmailVerificationBanner } from '@/features/client/components/EmailVerificationBanner';
 import { useGetUserProfile } from '@/services/api/hooks/useAuthAPI';
 import { resolveImageUrl } from '@/services/api/imageUrl';
 import { displayRating } from '@/services/api/rating';
@@ -250,6 +251,7 @@ export function ClientHomeScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        <EmailVerificationBanner />
         <HeroCarousel onPressBanner={handleBannerPress} />
         <SearchBar onSubmit={openDiscover} />
         <AppointmentsCard onPress={() => navigation.navigate('Bookings')} />

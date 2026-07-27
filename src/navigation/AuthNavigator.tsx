@@ -1,6 +1,7 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { EmailLoginScreen } from '@/features/auth/screens/EmailLoginScreen';
+import { EmailSignupScreen } from '@/features/auth/screens/EmailSignupScreen';
 import { ForgotPasswordScreen } from '@/features/auth/screens/ForgotPasswordScreen';
 import { OtpVerifyScreen } from '@/features/auth/screens/OtpVerifyScreen';
 import { SignInScreen } from '@/features/auth/screens/SignInScreen';
@@ -17,6 +18,7 @@ export function AuthNavigator() {
       <Stack.Screen component={OtpVerifyScreen} name="OtpVerify" />
       <Stack.Screen component={SignupScreen} name="Signup" />
       <Stack.Screen component={EmailLoginScreen} name="EmailLogin" />
+      <Stack.Screen component={EmailSignupScreen} name="EmailSignup" />
       <Stack.Screen component={ForgotPasswordScreen} name="ForgotPassword" />
     </Stack.Navigator>
   );
