@@ -24,6 +24,7 @@ import {
   useUpdateUserProfile,
   useLogout,
   useLogoutAll,
+  useDeleteAccount,
 } from '@/services/api/hooks/useAuthAPI';
 
 const colors = {
@@ -58,6 +59,9 @@ const INFO_LINKS: { icon: keyof typeof Ionicons.glyphMap; label: string; path: s
   { icon: 'help-circle-outline', label: 'FAQ / Help', path: '/faq' },
 ];
 
+// Typed exactly (case-insensitively) to confirm account deletion.
+const DELETE_CONFIRMATION = 'DELETE';
+
 function initialsOf(name?: string) {
   if (!name) return '?';
   return name
@@ -79,6 +83,7 @@ export function ProfileScreen() {
   const { mutate: saveProfile, isPending: isSaving } = useUpdateUserProfile();
   const { mutate: logoutUser } = useLogout();
   const { mutate: logoutAll, isPending: isLoggingOutAll } = useLogoutAll();
+  const { mutate: deleteAccount, isPending: isDeleting } = useDeleteAccount();
 
   const [editing, setEditing] = useState(false);
   const [fullName, setFullName] = useState('');
@@ -88,6 +93,10 @@ export function ProfileScreen() {
 
   const [showLogoutAll, setShowLogoutAll] = useState(false);
   const [logoutAllPassword, setLogoutAllPassword] = useState('');
+
+  const [showDelete, setShowDelete] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState('');
 
   // Sync form state whenever the fetched profile changes.
   useEffect(() => {
@@ -168,6 +177,36 @@ export function ProfileScreen() {
         onSuccess: () => signOut(),
         onError: (err: any) => {
           Alert.alert('Failed', err.message || 'Could not log out of all devices.');
+        },
+      },
+    );
+  };
+
+  const closeDelete = () => {
+    setShowDelete(false);
+    setDeletePassword('');
+    setDeleteConfirm('');
+  };
+
+  const canDelete =
+    !!deletePassword &&
+    deleteConfirm.trim().toUpperCase() === DELETE_CONFIRMATION &&
+    !isDeleting;
+
+  const handleDeleteAccount = () => {
+    if (!canDelete) return;
+    deleteAccount(
+      { password: deletePassword, confirmation: DELETE_CONFIRMATION },
+      {
+        onSuccess: (res) => {
+          closeDelete();
+          // Sign out first: the account is gone, so every further request 401s.
+          signOut();
+          queryClient.clear();
+          Alert.alert('Account deleted', res.message);
+        },
+        onError: (err: any) => {
+          Alert.alert('Could not delete account', err.message || 'Please try again.');
         },
       },
     );
@@ -357,6 +396,14 @@ export function ProfileScreen() {
                 <Ionicons color={colors.danger} name="shield-outline" size={18} />
                 <Text style={styles.logoutAllText}>Log out of all devices</Text>
               </Pressable>
+
+              <Pressable onPress={() => setShowDelete(true)} style={styles.deleteBtn}>
+                <Ionicons color={colors.danger} name="trash-outline" size={18} />
+                <Text style={styles.deleteText}>Delete Account</Text>
+              </Pressable>
+              <Text style={styles.deleteHint}>
+                Permanently deletes your account and personal data. This cannot be undone.
+              </Text>
             </View>
           )}
         </ScrollView>
@@ -397,6 +444,52 @@ export function ProfileScreen() {
                   <ActivityIndicator color={colors.white} />
                 ) : (
                   <Text style={styles.saveText}>Confirm</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal transparent visible={showDelete} animationType="fade" onRequestClose={closeDelete}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Delete your account?</Text>
+            <Text style={styles.modalSubtitle}>
+              This permanently erases your profile, saved salons, cart and reviews. Booking and
+              payment records are kept in anonymous form only where the law requires it. This cannot
+              be undone.
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              value={deletePassword}
+              onChangeText={setDeletePassword}
+              placeholder="Password"
+              placeholderTextColor={colors.muted}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={styles.modalInput}
+              value={deleteConfirm}
+              onChangeText={setDeleteConfirm}
+              placeholder={`Type ${DELETE_CONFIRMATION} to confirm`}
+              placeholderTextColor={colors.muted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+            />
+            <View style={styles.modalActions}>
+              <Pressable onPress={closeDelete} style={styles.cancelBtn} disabled={isDeleting}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleDeleteAccount}
+                style={[styles.destructiveBtn, !canDelete && styles.saveDisabled]}
+                disabled={!canDelete}
+              >
+                {isDeleting ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={styles.saveText}>Delete Account</Text>
                 )}
               </Pressable>
             </View>
@@ -580,6 +673,32 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   logoutAllText: { color: colors.danger, fontFamily: 'Inter_500Medium', fontSize: 14 },
+  deleteBtn: {
+    alignItems: 'center',
+    borderColor: colors.danger,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    paddingVertical: 15,
+  },
+  deleteText: { color: colors.danger, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  deleteHint: {
+    color: colors.muted,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+  },
+  destructiveBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.danger,
+    borderRadius: 12,
+    flex: 1,
+    justifyContent: 'center',
+    paddingVertical: 15,
+  },
   modalOverlay: {
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.45)',

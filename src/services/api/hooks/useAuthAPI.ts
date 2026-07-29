@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { apiGet, apiPost, apiPut } from '../client';
+import { apiDelete, apiGet, apiPost, apiPut } from '../client';
 
 // ==========================================
 // TYPES & INTERFACES (Mapped from auth.py)
@@ -24,6 +24,17 @@ export interface UserProfileUpdate {
   gender?: string; 
 }
 export interface LogoutAllRequest { password?: string; }
+export interface AccountDeleteRequest {
+  password: string;
+  /** Must be the literal string "DELETE" - the backend rejects anything else. */
+  confirmation: string;
+}
+export interface AccountDeleteResponse {
+  success: boolean;
+  message: string;
+  deleted_at: string;
+  retained_records: Record<string, number>;
+}
 export interface PasswordResetRequest { email: string; }
 export interface PasswordResetConfirm { token: string; new_password?: string; }
 
@@ -106,6 +117,17 @@ export function useLogout() {
 export function useLogoutAll() {
   return useMutation({
     mutationFn: async (data: LogoutAllRequest) => await apiPost<any>('/api/v1/auth/logout-all', data)
+  });
+}
+
+/**
+ * Permanently deletes the signed-in user's account (Google Play requirement).
+ * Irreversible - the caller must sign the user out afterwards.
+ */
+export function useDeleteAccount() {
+  return useMutation({
+    mutationFn: async (data: AccountDeleteRequest) =>
+      await apiDelete<AccountDeleteResponse>('/api/v1/auth/me', data),
   });
 }
 

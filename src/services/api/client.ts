@@ -166,11 +166,14 @@ export async function apiPatch<T>(path: string, body: any): Promise<T> {
   );
 }
 
-export async function apiDelete<T>(path: string): Promise<T> {
+// `body` is optional: most DELETEs take none, but account deletion sends a
+// password + typed confirmation.
+export async function apiDelete<T>(path: string, body?: any): Promise<T> {
   return request<T>(path, (headers) =>
     fetch(`${env.apiBaseUrl}${path}`, {
       method: 'DELETE',
       headers,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
   );
 }
