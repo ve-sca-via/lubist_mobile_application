@@ -25,9 +25,13 @@ export interface UserProfileUpdate {
 }
 export interface LogoutAllRequest { password?: string; }
 export interface AccountDeleteRequest {
-  password: string;
   /** Must be the literal string "DELETE" - the backend rejects anything else. */
   confirmation: string;
+  /** Identity proof: password OR verification_id + otp. Phone-first signups have
+   *  no password they know, so they confirm with an OTP instead. */
+  password?: string;
+  verification_id?: string;
+  otp?: string;
 }
 export interface AccountDeleteResponse {
   success: boolean;
@@ -117,6 +121,13 @@ export function useLogout() {
 export function useLogoutAll() {
   return useMutation({
     mutationFn: async (data: LogoutAllRequest) => await apiPost<any>('/api/v1/auth/logout-all', data)
+  });
+}
+
+/** Sends a deletion-confirmation OTP to the phone already on the account. */
+export function useSendAccountDeletionOtp() {
+  return useMutation({
+    mutationFn: async () => await apiPost<PhoneOTPResponse>('/api/v1/auth/me/delete/send-otp', {}),
   });
 }
 

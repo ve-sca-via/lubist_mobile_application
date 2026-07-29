@@ -25,6 +25,7 @@ import {
   useLogout,
   useLogoutAll,
   useDeleteAccount,
+  useSendAccountDeletionOtp,
 } from '@/services/api/hooks/useAuthAPI';
 
 const colors = {
@@ -84,6 +85,7 @@ export function ProfileScreen() {
   const { mutate: logoutUser } = useLogout();
   const { mutate: logoutAll, isPending: isLoggingOutAll } = useLogoutAll();
   const { mutate: deleteAccount, isPending: isDeleting } = useDeleteAccount();
+  const { mutate: sendDeletionOtp, isPending: isSendingOtp } = useSendAccountDeletionOtp();
 
   const [editing, setEditing] = useState(false);
   const [fullName, setFullName] = useState('');
@@ -97,6 +99,9 @@ export function ProfileScreen() {
   const [showDelete, setShowDelete] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState('');
+  const [deleteOtp, setDeleteOtp] = useState('');
+  const [deleteVerificationId, setDeleteVerificationId] = useState<string | null>(null);
+  const [maskedDeletePhone, setMaskedDeletePhone] = useState('');
 
   // Sync form state whenever the fetched profile changes.
   useEffect(() => {
@@ -186,17 +191,46 @@ export function ProfileScreen() {
     setShowDelete(false);
     setDeletePassword('');
     setDeleteConfirm('');
+    setDeleteOtp('');
+    setDeleteVerificationId(null);
+    setMaskedDeletePhone('');
   };
 
+  // Phone-first signups never chose a password (the app generated a throwaway),
+  // so those accounts confirm deletion with an OTP to the number on file.
+  const deleteByOtp = !!user?.phone_verified;
+
+  const openDelete = () => {
+    setShowDelete(true);
+    if (!deleteByOtp) return;
+    sendDeletionOtp(undefined, {
+      onSuccess: (res) => {
+        setDeleteVerificationId(res.verification_id);
+        setMaskedDeletePhone(res.phone);
+      },
+      onError: (err: any) => {
+        Alert.alert('Could not send code', err.message || 'Please try again.');
+        closeDelete();
+      },
+    });
+  };
+
+  const hasDeleteProof = deleteByOtp
+    ? !!deleteVerificationId && deleteOtp.trim().length === 6
+    : !!deletePassword;
+
   const canDelete =
-    !!deletePassword &&
-    deleteConfirm.trim().toUpperCase() === DELETE_CONFIRMATION &&
-    !isDeleting;
+    hasDeleteProof && deleteConfirm.trim().toUpperCase() === DELETE_CONFIRMATION && !isDeleting;
 
   const handleDeleteAccount = () => {
     if (!canDelete) return;
     deleteAccount(
-      { password: deletePassword, confirmation: DELETE_CONFIRMATION },
+      {
+        confirmation: DELETE_CONFIRMATION,
+        ...(deleteByOtp
+          ? { verification_id: deleteVerificationId!, otp: deleteOtp.trim() }
+          : { password: deletePassword }),
+      },
       {
         onSuccess: (res) => {
           closeDelete();
@@ -397,7 +431,7 @@ export function ProfileScreen() {
                 <Text style={styles.logoutAllText}>Log out of all devices</Text>
               </Pressable>
 
-              <Pressable onPress={() => setShowDelete(true)} style={styles.deleteBtn}>
+              <Pressable onPress={openDelete} style={styles.deleteBtn}>
                 <Ionicons color={colors.danger} name="trash-outline" size={18} />
                 <Text style={styles.deleteText}>Delete Account</Text>
               </Pressable>
@@ -459,15 +493,39 @@ export function ProfileScreen() {
               payment records are kept in anonymous form only where the law requires it. This cannot
               be undone.
             </Text>
-            <TextInput
-              style={styles.modalInput}
-              value={deletePassword}
-              onChangeText={setDeletePassword}
-              placeholder="Password"
-              placeholderTextColor={colors.muted}
-              secureTextEntry
-              autoCapitalize="none"
-            />
+            {deleteByOtp ? (
+              isSendingOtp || !deleteVerificationId ? (
+                <View style={styles.otpLoading}>
+                  <ActivityIndicator color={colors.gold} />
+                  <Text style={styles.modalSubtitle}>Sending a code to your phone…</Text>
+                </View>
+              ) : (
+                <>
+                  <Text style={styles.modalSubtitle}>
+                    Enter the 6-digit code sent to {maskedDeletePhone}.
+                  </Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={deleteOtp}
+                    onChangeText={(v) => setDeleteOtp(v.replace(/[^\d]/g, ''))}
+                    placeholder="6-digit code"
+                    placeholderTextColor={colors.muted}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                  />
+                </>
+              )
+            ) : (
+              <TextInput
+                style={styles.modalInput}
+                value={deletePassword}
+                onChangeText={setDeletePassword}
+                placeholder="Password"
+                placeholderTextColor={colors.muted}
+                secureTextEntry
+                autoCapitalize="none"
+              />
+            )}
             <TextInput
               style={styles.modalInput}
               value={deleteConfirm}
@@ -684,6 +742,7 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
   },
   deleteText: { color: colors.danger, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  otpLoading: { alignItems: 'center', gap: 10, paddingVertical: 12 },
   deleteHint: {
     color: colors.muted,
     fontFamily: 'Inter_400Regular',

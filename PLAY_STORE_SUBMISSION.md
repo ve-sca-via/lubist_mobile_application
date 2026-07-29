@@ -53,7 +53,7 @@ Note: bumping `expo.version` also changes the OTA `runtimeVersion` — see `RELE
      - Encrypted in transit: **Yes** (production API + Supabase are HTTPS).
      - Account creation: **Username and password** (email) *and* **Username and other authentication** (phone + OTP). Not OAuth — the app has no Google/Apple sign-in.
      - **Delete account URL**: `https://www.lubist.com/delete-account` — public page (no login) served by the web app at `src/pages/public/DeleteAccount.jsx`. Must be deployed before submitting; the reviewer opens it.
-     - In-app deletion path (reviewers check this too): Profile → **Delete Account** → password + type `DELETE`. Backed by `DELETE /api/v1/auth/me`.
+     - In-app deletion path (reviewers check this too): Profile → **Delete Account** → phone OTP (or password for email signups) + type `DELETE`. Backed by `DELETE /api/v1/auth/me`.
    - [ ] **Ads** — declare if the app shows ads.
    - [ ] **Content rating** — complete the questionnaire.
    - [ ] **Target audience & content** — age groups.
