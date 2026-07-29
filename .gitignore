@@ -37,6 +37,10 @@ coverage/
 .env
 .env.*
 !.env.example
+# Committed on purpose: holds the PRODUCTION api/web URLs that every `eas update`
+# must bundle. Contains no secrets (EXPO_PUBLIC_* values ship in the JS bundle
+# anyway). Without it, a local staging override in .env leaks into an OTA build.
+!.env.production
 
 # IDEs and OS files
 .idea/
