@@ -16,9 +16,25 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { env } from '@/app/config/env';
 import type { AuthStackParamList } from '@/navigation/navigation.types';
 import { useAuth } from '@/store/AuthContext';
 import { useLogin } from '@/services/api/hooks/useAuthAPI';
+
+// This app only has customer screens today - the vendor, RM and admin modules
+// are placeholders. /auth/login itself has no role restriction (the web portal
+// shares it), so a staff account signs in fine and then lands on an empty stub,
+// or on nothing at all for relationship_manager, which has no matching route in
+// RootNavigator. Stop them here and send them to the portal that does work.
+// Phone login needs no such gate - the backend already restricts it to customers.
+const CUSTOMER_ROLES = ['customer', 'client'];
+
+const ROLE_LABELS: Record<string, string> = {
+  vendor: 'Salon partner',
+  relationship_manager: 'Relationship manager',
+  rm: 'Relationship manager',
+  admin: 'Admin',
+};
 
 const colors = {
   bgTop: '#FFF8F4',
@@ -58,6 +74,18 @@ export function EmailLoginScreen() {
       { email, password },
       {
         onSuccess: (data) => {
+          const role = data.user?.user_role || data.user?.role || 'customer';
+
+          if (!CUSTOMER_ROLES.includes(role)) {
+            // Returning without signIn leaves nothing behind - signIn is what
+            // writes the tokens to SecureStore, so the session is simply dropped.
+            Alert.alert(
+              'Use the web portal',
+              `${ROLE_LABELS[role] ?? 'Staff'} accounts are managed on the Lubist web portal (${env.webBaseUrl.replace(/^https?:\/\//, '')}). The app is for customer accounts.`,
+            );
+            return;
+          }
+
           // Logged in! Call signIn to update Context state
           signIn(data.user || { role: 'client' }, {
             access_token: data.access_token,

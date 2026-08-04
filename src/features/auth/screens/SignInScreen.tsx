@@ -101,21 +101,34 @@ export function SignInScreen() {
           });
         },
         onError: (error: any) => {
-          const errorMessage = error.message?.toLowerCase() || '';
-          if (errorMessage.includes('not registered') || errorMessage.includes('404')) {
+          const message = error.message || 'Failed to send OTP';
+          const lower = message.toLowerCase();
+
+          if (lower.includes('not registered') || lower.includes('404')) {
             startSignupOtp();
-          } else if (errorMessage.includes('not verified') || errorMessage.includes('403')) {
+            return;
+          }
+
+          // Legacy fallback only: the current backend verifies an unverified
+          // number through the login OTP itself, so it no longer returns this.
+          // Keep it for users still hitting an older server. It used to fire on
+          // any '403' as well, which told vendors and deactivated accounts to go
+          // verify a phone that was already verified.
+          if (lower.includes('not verified')) {
             Alert.alert(
               'Phone Not Verified',
-              'This phone number is registered but not verified. Please log in with your Email and verify your phone in Profile settings.',
+              'This number is on an account created with email. Log in with your email, then verify this number in Profile settings.',
               [
                 { text: 'Cancel', style: 'cancel' },
-                { text: 'Login with Email', onPress: () => navigation.navigate('EmailLogin') }
-              ]
+                { text: 'Login with Email', onPress: () => navigation.navigate('EmailLogin') },
+              ],
             );
-          } else {
-            Alert.alert('Error', error.message || 'Failed to send OTP');
+            return;
           }
+
+          // Everything else (wrong account type, deactivated account, network)
+          // shows what the server actually said.
+          Alert.alert('Error', message);
         }
       }
     );
