@@ -43,6 +43,7 @@ import { EmailVerificationBanner } from '@/features/client/components/EmailVerif
 import { useGetUserProfile } from '@/services/api/hooks/useAuthAPI';
 import { resolveImageUrl } from '@/services/api/imageUrl';
 import { displayRating } from '@/services/api/rating';
+import { salonAddress, salonLocationLabel } from '@/services/api/salonLocation';
 
 // Assets exported 1:1 from Figma ("HOmescreen").
 const hero = require('@/assets/home/hero.png');
@@ -212,7 +213,7 @@ export function ClientHomeScreen() {
     openSalon({
       id: s.id,
       name: s.business_name,
-      location: [s.city, s.state].filter(Boolean).join(', '),
+      location: salonAddress(s),
       rating: displayRating(s.average_rating, s.total_reviews).label,
       reviewCount: s.total_reviews ?? 0,
       heroImage: s.logo_url ?? s.cover_images?.[0] ?? undefined,
@@ -229,7 +230,7 @@ export function ClientHomeScreen() {
     openSalon({
       id: s.id,
       name: s.business_name,
-      location: [s.city, s.state].filter(Boolean).join(', '),
+      location: salonAddress(s),
       rating: displayRating(s.average_rating, s.total_reviews).label,
       reviewCount: s.total_reviews ?? 0,
       distance,
@@ -570,7 +571,7 @@ function NearYouSection({
             <NearYouCard
               key={salon.id}
               imageSource={remote ? { uri: remote } : fallbackImages[index % fallbackImages.length]}
-              location={[salon.city, salon.state].filter(Boolean).join(', ') || 'Nearby'}
+              location={salonAddress(salon) || 'Nearby'}
               name={salon.business_name}
               onPress={() => onOpen(salon)}
               pills={[salon.city].filter(Boolean) as string[]}
@@ -638,9 +639,9 @@ function NearYouCard({
         <View style={styles.nearYouContent}>
           <Text style={styles.nearYouName}>{name}</Text>
           <View style={styles.nearYouMetaRow}>
-            <View style={styles.nearYouMeta}>
+            <View style={[styles.nearYouMeta, styles.nearYouMetaAddress]}>
               <Ionicons color={colors.onImage} name="location-outline" size={12} />
-              <Text style={styles.nearYouMetaText}>{location}</Text>
+              <Text numberOfLines={1} style={styles.nearYouMetaText}>{location}</Text>
             </View>
             {timing ? (
               <>
@@ -781,7 +782,7 @@ function TopSalonsSection({
               chips={chips}
               hasRating={hasRating}
               imageSource={remote ? { uri: remote } : fallbackImages[index % fallbackImages.length]}
-              location={[salon.city, salon.state].filter(Boolean).join(', ') || 'Salon'}
+              location={salonLocationLabel(salon, 'Salon')}
               name={salon.business_name}
               onPress={() => onOpen(salon)}
               rating={label}
@@ -843,8 +844,13 @@ function TopSalonCard({
           </View>
         </View>
         <View style={styles.topRatedMeta}>
-          <Ionicons color={colors.text} name="location-outline" size={14} />
-          <Text numberOfLines={1} style={styles.topRatedMetaText}>{location}</Text>
+          <Ionicons
+            color={colors.text}
+            name="location-outline"
+            size={14}
+            style={styles.topRatedMetaIcon}
+          />
+          <Text numberOfLines={2} style={styles.topRatedMetaText}>{location}</Text>
         </View>
         {chips.length ? (
           <View style={styles.topRatedChips}>
@@ -1285,8 +1291,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 4,
   },
+  // The address is the only part of this compact overlay that can be long, so
+  // it absorbs the shrinking and keeps the distance chip intact.
+  nearYouMetaAddress: {
+    flexShrink: 1,
+  },
   nearYouMetaText: {
     color: colors.onImage,
+    flexShrink: 1,
     fontFamily: 'Inter_500Medium',
     fontSize: 12,
   },
@@ -1479,14 +1491,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   topRatedMeta: {
-    alignItems: 'center',
+    alignItems: 'flex-start',
     flexDirection: 'row',
     gap: 6,
   },
+  topRatedMetaIcon: {
+    marginTop: 3,
+  },
+  // Full salon addresses are long, so the label wraps rather than being clipped.
   topRatedMetaText: {
     color: colors.text,
+    flex: 1,
     fontFamily: 'Inter_400Regular',
     fontSize: 16,
+    lineHeight: 21,
   },
   topRatedChips: {
     flexDirection: 'row',

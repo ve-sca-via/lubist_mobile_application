@@ -6,6 +6,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import type { ClientStackParamList } from '@/navigation/navigation.types';
 import { resolveImageUrl } from '@/services/api/imageUrl';
 import { displayRating } from '@/services/api/rating';
+import { salonAddress } from '@/services/api/salonLocation';
 import { useRelatedSalons, type Salon } from '@/services/api/hooks/useSalonsAPI';
 
 type Navigation = NativeStackNavigationProp<ClientStackParamList>;
@@ -19,7 +20,7 @@ const colors = {
 };
 
 function salonLocation(s: Salon) {
-  return [s.city, s.state].filter(Boolean).join(', ');
+  return salonAddress(s);
 }
 
 /**

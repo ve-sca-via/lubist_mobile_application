@@ -23,6 +23,7 @@ import {
 } from '@/services/api/hooks/useProductsAPI';
 import { resolveImageUrl } from '@/services/api/imageUrl';
 import { displayRating } from '@/services/api/rating';
+import { salonLocationLabel } from '@/services/api/salonLocation';
 
 const avatar = require('@/assets/home/avatar.png');
 const fallbackSalon = require('@/assets/home/top-lumina.png');
@@ -53,7 +54,7 @@ const colors = {
 type SavedNavigation = NativeStackNavigationProp<ClientStackParamList>;
 
 function salonLocation(s: FavoriteItem) {
-  return [s.city, s.state].filter(Boolean).join(', ') || 'Salon';
+  return salonLocationLabel(s, 'Salon');
 }
 
 export function ClientAccountScreen() {
@@ -157,8 +158,15 @@ export function ClientAccountScreen() {
                   </View>
                 </View>
                 <View style={styles.salonMeta}>
-                  <Ionicons color={colors.text} name="location-outline" size={14} />
-                  <Text style={styles.salonMetaText}>{salonLocation(salon)}</Text>
+                  <Ionicons
+                    color={colors.text}
+                    name="location-outline"
+                    size={14}
+                    style={styles.salonMetaIcon}
+                  />
+                  <Text numberOfLines={2} style={styles.salonMetaText}>
+                    {salonLocation(salon)}
+                  </Text>
                 </View>
                 {salon.salon_type ? (
                   <View style={styles.salonChips}>
@@ -472,14 +480,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   salonMeta: {
-    alignItems: 'center',
+    alignItems: 'flex-start',
     flexDirection: 'row',
     gap: 6,
   },
+  salonMetaIcon: {
+    marginTop: 3,
+  },
   salonMetaText: {
     color: colors.text,
+    flex: 1,
     fontFamily: 'Inter_400Regular',
     fontSize: 16,
+    lineHeight: 21,
   },
   salonChips: {
     flexDirection: 'row',

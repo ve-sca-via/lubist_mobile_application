@@ -10,6 +10,7 @@ export interface FavoriteItem {
   id?: string;
   salon_id?: string;
   business_name?: string;
+  address?: string | null;
   city?: string | null;
   state?: string | null;
   average_rating?: number | null;

@@ -39,6 +39,7 @@ import { useMyBookings } from '@/services/api/hooks/useBookingAPI';
 import { ReviewModal } from '@/features/client/components/ReviewModal';
 import { resolveImageUrl } from '@/services/api/imageUrl';
 import { displayRating } from '@/services/api/rating';
+import { salonAddress } from '@/services/api/salonLocation';
 
 const colors = {
   background: '#FFFAF5',
@@ -232,9 +233,7 @@ export function SalonDetailsScreen() {
   };
 
   const locationText =
-    [salon?.address, salon?.city, salon?.state].filter(Boolean).join(', ') ||
-    routeSalon?.location ||
-    'Location unavailable';
+    (salon ? salonAddress(salon) : '') || routeSalon?.location || 'Location unavailable';
   const reviewCount = salon?.total_reviews ?? routeSalon?.reviewCount ?? reviews.length;
   const ratingValue = displayRating(salon?.average_rating, reviewCount).label;
 

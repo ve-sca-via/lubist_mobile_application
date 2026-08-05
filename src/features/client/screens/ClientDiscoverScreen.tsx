@@ -34,6 +34,7 @@ import { useNearbySalons } from '@/services/api/hooks/useLocationAPI';
 import { useProductCart } from '@/services/api/hooks/useProductsAPI';
 import { resolveImageUrl } from '@/services/api/imageUrl';
 import { displayRating } from '@/services/api/rating';
+import { salonLocationLabel } from '@/services/api/salonLocation';
 import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue';
 
 // Local fallbacks when a salon has no logo / cover image (exported 1:1 from Figma).
@@ -84,11 +85,7 @@ const sortOptions = [
 type DiscoverNavigation = BottomTabNavigationProp<ClientTabParamList>;
 
 function salonLocation(s: Salon) {
-  const parts = [s.city, s.state].filter(Boolean).join(', ');
-  if (s.distance_km != null) {
-    return parts ? `${parts} • ${s.distance_km.toFixed(1)} km` : `${s.distance_km.toFixed(1)} km`;
-  }
-  return parts || s.address || 'Location unavailable';
+  return salonLocationLabel(s);
 }
 
 export function ClientDiscoverScreen() {
@@ -440,8 +437,8 @@ function SalonCard({
         </View>
 
         <View style={styles.locationRow}>
-          <Ionicons color={colors.text} name="location-outline" size={14} />
-          <Text style={styles.locationText}>{location}</Text>
+          <Ionicons color={colors.text} name="location-outline" size={14} style={styles.locationIcon} />
+          <Text numberOfLines={2} style={styles.locationText}>{location}</Text>
         </View>
 
         {chips.length > 0 ? (
@@ -730,14 +727,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   locationRow: {
-    alignItems: 'center',
+    alignItems: 'flex-start',
     flexDirection: 'row',
     gap: 6,
   },
+  locationIcon: {
+    marginTop: 3,
+  },
+  // Salon addresses are long, so the label wraps to a second line instead of
+  // being clipped to the city.
   locationText: {
     color: colors.text,
+    flex: 1,
     fontFamily: 'Inter_400Regular',
     fontSize: 16,
+    lineHeight: 21,
   },
   chipRow: {
     flexDirection: 'row',
