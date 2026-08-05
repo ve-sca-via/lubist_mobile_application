@@ -22,6 +22,9 @@ export interface NearbySalon {
   logo_url?: string | null;
   cover_images?: string[] | null;
   distance_km?: number | null;
+  // Kind of establishment ('spa' | 'barber_shop' | …). The PostGIS function
+  // doesn't return it; the backend attaches it from the vendor join request.
+  business_type?: string | null;
 }
 
 export interface NearbySalonsResponse {

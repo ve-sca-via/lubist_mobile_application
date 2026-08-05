@@ -26,6 +26,7 @@ import type {
 import {
   usePublicSalons,
   useSearchSalons,
+  businessTypeChipLabel,
   businessTypeLabel,
   type Salon,
   type AvailableCoupon,
@@ -213,7 +214,7 @@ export function ClientDiscoverScreen() {
                 return (
                   <SalonCard
                     key={salon.id}
-                    chips={salon.business_type ? [businessTypeLabel(salon.business_type).toUpperCase()] : []}
+                    chips={salon.business_type ? [businessTypeChipLabel(salon.business_type).toUpperCase()] : []}
                     imageSource={remote ? { uri: remote } : fallbackImages[index % fallbackImages.length]}
                     location={salonLocation(salon)}
                     name={salon.business_name}

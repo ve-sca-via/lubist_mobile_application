@@ -34,6 +34,7 @@ import {
 } from '@/services/api/hooks/useLocationAPI';
 import {
   usePublicSalons,
+  businessTypeChipLabel,
   businessTypeLabel,
   type Salon,
 } from '@/services/api/hooks/useSalonsAPI';
@@ -574,7 +575,7 @@ function NearYouSection({
               location={salonAddress(salon) || 'Nearby'}
               name={salon.business_name}
               onPress={() => onOpen(salon)}
-              pills={[salon.city].filter(Boolean) as string[]}
+              pills={[businessTypeChipLabel(salon.business_type).toUpperCase()].filter(Boolean)}
               rating={displayRating(salon.average_rating, salon.total_reviews).label}
               timing={salon.distance_km != null ? `${salon.distance_km.toFixed(1)} km` : ''}
             />
@@ -772,8 +773,11 @@ function TopSalonsSection({
         {salons.map((salon, index) => {
           const remote = resolveImageUrl(salon.logo_url ?? salon.cover_images?.[0]);
           const { hasRating, label } = displayRating(salon.average_rating, salon.total_reviews);
+          // The badge is the establishment type (SPA, BARBER SHOP …) from the
+          // vendor's join request. `salon_type` is the account kind and would
+          // label every listing "SALON".
           const chips = [
-            salon.salon_type ? salon.salon_type.replace(/_/g, ' ').toUpperCase() : null,
+            businessTypeChipLabel(salon.business_type).toUpperCase(),
             salon.city,
           ].filter(Boolean) as string[];
           return (

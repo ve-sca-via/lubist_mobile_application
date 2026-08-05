@@ -24,6 +24,8 @@ export interface Salon {
   total_reviews?: number | null;
   logo_url?: string | null;
   cover_images?: string[] | null;
+  // Account kind ('salon' | 'regular_buyer') — NOT the establishment type.
+  // Never render this on a card; use `business_type` below.
   salon_type?: string | null;
   // Kind of establishment, sourced from the vendor's join request:
   // 'salon' | 'spa' | 'clinic' | 'unisex_salon' | 'barber_shop' | 'beauty_parlor' | …
@@ -48,13 +50,30 @@ export const BUSINESS_TYPE_LABELS: Record<string, string> = {
   wholesale_buyer: 'Wholesale',
 };
 
-/** Display label for a `business_type`, falling back to a title-cased slug. */
+/**
+ * Plural category label for headings and filter chips ("Spa & Wellness"),
+ * falling back to a title-cased slug.
+ */
 export function businessTypeLabel(type?: string | null): string {
   if (!type) return 'Salons';
   return (
     BUSINESS_TYPE_LABELS[type] ??
     type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
   );
+}
+
+/**
+ * Singular label for the type badge on a salon card ("Unisex Salon", "Barber
+ * Shop"). Matches the web app's card badge, which prints the raw
+ * `business_type` with underscores swapped for spaces — the plural category
+ * labels above read wrong there ("SALONS" on a single salon's card).
+ *
+ * Returns '' for an unknown type so the caller can drop the badge rather than
+ * guess a type.
+ */
+export function businessTypeChipLabel(type?: string | null): string {
+  if (!type) return '';
+  return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export interface SalonDetail extends Salon {

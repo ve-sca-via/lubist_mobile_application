@@ -25,6 +25,7 @@ import {
   useSalonDetail,
   useSalonServices,
   useSalonReviews,
+  businessTypeChipLabel,
   type SalonReview,
   type AvailableCoupon,
 } from '@/services/api/hooks/useSalonsAPI';
@@ -70,8 +71,7 @@ type Navigation = NativeStackNavigationProp<ClientStackParamList>;
 type SectionKey = 'services' | 'reviews' | 'about';
 
 function humanizeType(type?: string | null) {
-  if (!type) return 'Salon';
-  return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return businessTypeChipLabel(type) || 'Salon';
 }
 
 function formatTime(t?: string | null) {

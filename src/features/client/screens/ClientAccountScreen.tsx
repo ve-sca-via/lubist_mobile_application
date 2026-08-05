@@ -21,6 +21,7 @@ import {
   productImageUri,
   type Product,
 } from '@/services/api/hooks/useProductsAPI';
+import { businessTypeChipLabel } from '@/services/api/hooks/useSalonsAPI';
 import { resolveImageUrl } from '@/services/api/imageUrl';
 import { displayRating } from '@/services/api/rating';
 import { salonLocationLabel } from '@/services/api/salonLocation';
@@ -168,11 +169,11 @@ export function ClientAccountScreen() {
                     {salonLocation(salon)}
                   </Text>
                 </View>
-                {salon.salon_type ? (
+                {salon.business_type ? (
                   <View style={styles.salonChips}>
                     <View style={styles.salonChip}>
                       <Text style={styles.salonChipText}>
-                        {salon.salon_type.replace(/_/g, ' ').toUpperCase()}
+                        {businessTypeChipLabel(salon.business_type).toUpperCase()}
                       </Text>
                     </View>
                   </View>

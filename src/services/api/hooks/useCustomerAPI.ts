@@ -17,7 +17,11 @@ export interface FavoriteItem {
   total_reviews?: number | null;
   logo_url?: string | null;
   cover_images?: string[] | null;
+  // Account kind ('salon' | 'regular_buyer'), not the establishment type.
   salon_type?: string | null;
+  // Kind of establishment ('spa' | 'barber_shop' | …), joined from the vendor
+  // join request by the favorites endpoint.
+  business_type?: string | null;
   salon?: { id?: string; [k: string]: any } | null;
   [k: string]: any;
 }
