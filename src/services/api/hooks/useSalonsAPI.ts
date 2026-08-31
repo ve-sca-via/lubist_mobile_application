@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { apiGet } from '../client';
 import type { AvailableCoupon } from './useBookingAPI';
 
@@ -149,6 +149,12 @@ interface PublicSalonsParams {
   enabled?: boolean;
 }
 
+interface InfinitePublicSalonsParams {
+  city?: string;
+  pageSize?: number;
+  enabled?: boolean;
+}
+
 interface SearchSalonsParams {
   q?: string;
   city?: string;
@@ -171,6 +177,27 @@ export function usePublicSalons({ city, limit = 50, offset = 0, enabled = true }
       if (city) params.set('city', city);
       return await apiGet<SalonListResponse>(`/api/v1/salons/public?${params.toString()}`);
     },
+  });
+}
+
+/**
+ * Public salons, paginated for infinite scroll. Pages accumulate in
+ * `data.pages`; flatten with `.flatMap(p => p.salons)` to get the full list
+ * fetched so far. Stops (`hasNextPage` becomes false) once a page comes back
+ * shorter than `pageSize`.
+ */
+export function useInfinitePublicSalons({ city, pageSize = 10, enabled = true }: InfinitePublicSalonsParams = {}) {
+  return useInfiniteQuery({
+    queryKey: ['publicSalonsInfinite', city ?? null, pageSize],
+    enabled,
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
+      const params = new URLSearchParams({ limit: String(pageSize), offset: String(pageParam) });
+      if (city) params.set('city', city);
+      return await apiGet<SalonListResponse>(`/api/v1/salons/public?${params.toString()}`);
+    },
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.salons.length < pageSize ? undefined : allPages.length * pageSize,
   });
 }
 

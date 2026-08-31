@@ -33,7 +33,7 @@ import {
   type NearbySalon,
 } from '@/services/api/hooks/useLocationAPI';
 import {
-  usePublicSalons,
+  useInfinitePublicSalons,
   businessTypeChipLabel,
   businessTypeLabel,
   type Salon,
@@ -182,23 +182,40 @@ export function ClientHomeScreen() {
   });
 
   // Top salons: highest-rated public salons (rating, then review count).
-  const publicSalons = usePublicSalons({ limit: 50 });
+  // Paginated — starts with one page and fetches more as the user scrolls
+  // toward the bottom of the home page (see handleScroll below).
+  const publicSalons = useInfinitePublicSalons({ pageSize: 10 });
+  const allPublicSalons = useMemo(
+    () => publicSalons.data?.pages.flatMap((page) => page.salons) ?? [],
+    [publicSalons.data],
+  );
   const topSalons = useMemo(() => {
-    const list = publicSalons.data?.salons ?? [];
-    return [...list]
-      .sort(
-        (a, b) =>
-          (b.average_rating ?? 0) - (a.average_rating ?? 0) ||
-          (b.total_reviews ?? 0) - (a.total_reviews ?? 0),
-      )
-      .slice(0, 5);
-  }, [publicSalons.data]);
+    return [...allPublicSalons].sort(
+      (a, b) =>
+        (b.average_rating ?? 0) - (a.average_rating ?? 0) ||
+        (b.total_reviews ?? 0) - (a.total_reviews ?? 0),
+    );
+  }, [allPublicSalons]);
+
+  const loadMoreSalons = () => {
+    if (publicSalons.hasNextPage && !publicSalons.isFetchingNextPage) {
+      publicSalons.fetchNextPage();
+    }
+  };
+
+  const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+    const distanceToBottom = contentSize.height - (layoutMeasurement.height + contentOffset.y);
+    if (distanceToBottom < 200) {
+      loadMoreSalons();
+    }
+  };
 
   // "Services for you": the distinct establishment types actually present in the
   // catalogue (with a count each), so the section reflects real data instead of a
   // hardcoded list. Ordered by how many salons offer each type.
   const serviceCategories = useMemo<ServiceCategory[]>(() => {
-    const list = publicSalons.data?.salons ?? [];
+    const list = allPublicSalons;
     const counts = new Map<string, number>();
     for (const salon of list) {
       const type = salon.business_type;
@@ -208,7 +225,7 @@ export function ClientHomeScreen() {
     return [...counts.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([type, count]) => ({ type, count, label: businessTypeLabel(type) }));
-  }, [publicSalons.data]);
+  }, [allPublicSalons]);
 
   const openTopSalon = (s: Salon) =>
     openSalon({
@@ -251,6 +268,8 @@ export function ClientHomeScreen() {
       />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
+        onScroll={handleScroll}
+        scrollEventThrottle={200}
         showsVerticalScrollIndicator={false}
       >
         <EmailVerificationBanner />
@@ -302,6 +321,7 @@ export function ClientHomeScreen() {
         <TopSalonsSection
           salons={topSalons}
           loading={publicSalons.isLoading}
+          loadingMore={publicSalons.isFetchingNextPage}
           isError={publicSalons.isError}
           onOpen={openTopSalon}
         />
@@ -736,11 +756,13 @@ function BeautyEssentials({ onOpen }: { onOpen: (category: string) => void }) {
 function TopSalonsSection({
   salons,
   loading,
+  loadingMore,
   isError,
   onOpen,
 }: {
   salons: Salon[];
   loading: boolean;
+  loadingMore?: boolean;
   isError: boolean;
   onOpen: (salon: Salon) => void;
 }) {
@@ -794,6 +816,11 @@ function TopSalonsSection({
             />
           );
         })}
+        {loadingMore ? (
+          <View style={styles.topSalonsFooter}>
+            <ActivityIndicator color={colors.gold} />
+          </View>
+        ) : null}
       </View>
     );
   };
@@ -1421,6 +1448,9 @@ const styles = StyleSheet.create({
   },
   topRatedList: {
     gap: 16,
+  },
+  topSalonsFooter: {
+    paddingVertical: 16,
   },
   topRatedCard: {
     backgroundColor: colors.cardCream2,
