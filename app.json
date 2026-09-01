@@ -47,6 +47,12 @@
         {
           "locationWhenInUsePermission": "Lubist uses your location to show salons near you."
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Lubist uses your photos to upload salon images and documents."
+        }
       ]
     ],
     "extra": {

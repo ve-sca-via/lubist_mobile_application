@@ -46,8 +46,17 @@ export type AuthStackParamList = {
 
 export type VendorTabParamList = {
   Dashboard: undefined;
-  Bookings: undefined;
   Profile: undefined;
+  Services: undefined;
+  Bookings: undefined;
+};
+
+export type VendorStackParamList = {
+  Tabs: undefined;
+  ServiceAddWizard: undefined;
+  ServiceConfigure: { serviceId: string };
+  BookingDetails: { bookingId: string };
+  RunPromo: undefined;
 };
 
 export type ClientTabParamList = {

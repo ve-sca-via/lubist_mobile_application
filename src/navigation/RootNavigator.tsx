@@ -9,7 +9,7 @@ import { AuthNavigator } from './AuthNavigator';
 import { ClientStackNavigator } from './ClientStackNavigator';
 import { RMNavigator } from './RMNavigator';
 import { RootStackParamList } from './navigation.types';
-import { VendorNavigator } from './VendorNavigator';
+import { VendorStackNavigator } from './VendorStackNavigator';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -38,7 +38,7 @@ export function RootNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {role === 'vendor' ? (
-        <Stack.Screen name="Vendor" component={VendorNavigator} />
+        <Stack.Screen name="Vendor" component={VendorStackNavigator} />
       ) : role === 'client' ? (
         <Stack.Screen name="Client" component={ClientStackNavigator} />
       ) : role === 'admin' ? (
