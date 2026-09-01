@@ -72,16 +72,38 @@ const colors = {
   radioIdle: 'rgba(217, 195, 173, 0.5)',
 };
 
+// Only sorts backed by data the API already returns on every salon row are
+// wired up. The rest need new backend aggregation (booking counts, favorite
+// counts, a derived starting price) and show as "Coming soon" until then.
+type SortKey = 'new' | 'top-rated' | 'discount';
+
 const sortOptions = [
-  { id: 'popularity', label: 'Popularity', icon: 'flame-outline' as const },
-  { id: 'new', label: 'New Arrivals', icon: 'sparkles-outline' as const },
-  { id: 'price-low', label: 'Price: Low to High', icon: 'arrow-up-outline' as const },
-  { id: 'price-high', label: 'Price: High to Low', icon: 'arrow-down-outline' as const },
-  { id: 'top-rated', label: 'Top Rated', icon: 'star-outline' as const },
-  { id: 'best-sellers', label: 'Best Sellers', icon: 'trophy-outline' as const },
-  { id: 'discount', label: 'Discount', icon: 'pricetag-outline' as const },
-  { id: 'favorites', label: 'Customer Favorites', icon: 'heart-outline' as const },
+  // { id: 'popularity', label: 'Popularity', icon: 'flame-outline' as const, available: false },
+  { id: 'new', label: 'New Arrivals', icon: 'sparkles-outline' as const, available: true },
+  // { id: 'price-low', label: 'Price: Low to High', icon: 'arrow-up-outline' as const, available: false },
+  // { id: 'price-high', label: 'Price: High to Low', icon: 'arrow-down-outline' as const, available: false },
+  { id: 'top-rated', label: 'Top Rated', icon: 'star-outline' as const, available: true },
+  // { id: 'best-sellers', label: 'Best Sellers', icon: 'trophy-outline' as const, available: false },
+  { id: 'discount', label: 'Discount', icon: 'pricetag-outline' as const, available: true },
+  // { id: 'favorites', label: 'Customer Favorites', icon: 'heart-outline' as const, available: false },
 ];
+
+/** Sorts by data already present on every salon row; `null` keeps API order. */
+function sortSalons(salons: Salon[], sort: SortKey | null): Salon[] {
+  if (!sort) return salons;
+  const sorted = [...salons];
+  if (sort === 'new') {
+    sorted.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+  } else if (sort === 'top-rated') {
+    sorted.sort((a, b) => {
+      const ratingDiff = (b.average_rating ?? 0) - (a.average_rating ?? 0);
+      return ratingDiff !== 0 ? ratingDiff : (b.total_reviews ?? 0) - (a.total_reviews ?? 0);
+    });
+  } else if (sort === 'discount') {
+    sorted.sort((a, b) => (b.max_discount_percentage ?? 0) - (a.max_discount_percentage ?? 0));
+  }
+  return sorted;
+}
 
 type DiscoverNavigation = BottomTabNavigationProp<ClientTabParamList>;
 
@@ -100,6 +122,7 @@ export function ClientDiscoverScreen() {
   const filterTitle = route.params?.title;
   const parent = navigation.getParent<NativeStackNavigationProp<ClientStackParamList>>();
   const [sortOpen, setSortOpen] = useState(false);
+  const [activeSort, setActiveSort] = useState<SortKey | null>(null);
   const [query, setQuery] = useState(initialQuery ?? '');
 
   // Seed the search box when the screen is opened with a query from elsewhere
@@ -136,6 +159,7 @@ export function ClientDiscoverScreen() {
   if (!isSearching && businessType) {
     salons = salons.filter((s) => s.business_type === businessType);
   }
+  salons = sortSalons(salons, activeSort);
 
   const heading = isSearching
     ? 'SEARCH RESULTS'
@@ -165,7 +189,12 @@ export function ClientDiscoverScreen() {
         onCart={() => navigation.navigate('Shopping')}
         title={hasFilter ? (filterTitle ?? businessTypeLabel(businessType)) : 'Salons'}
       />
-      <SearchSection onSort={() => setSortOpen(true)} value={query} onChangeText={setQuery} />
+      <SearchSection
+        onSort={() => setSortOpen(true)}
+        sortActive={activeSort != null}
+        value={query}
+        onChangeText={setQuery}
+      />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.resultsHeader}>
@@ -230,13 +259,34 @@ export function ClientDiscoverScreen() {
         </View>
       </ScrollView>
 
-      <SortSheet onClose={() => setSortOpen(false)} visible={sortOpen} />
+      <SortSheet
+        onApply={setActiveSort}
+        onClose={() => setSortOpen(false)}
+        selected={activeSort}
+        visible={sortOpen}
+      />
     </SafeAreaView>
   );
 }
 
-function SortSheet({ onClose, visible }: { onClose: () => void; visible: boolean }) {
-  const [selected, setSelected] = useState('popularity');
+function SortSheet({
+  onApply,
+  onClose,
+  selected,
+  visible,
+}: {
+  onApply: (sort: SortKey | null) => void;
+  onClose: () => void;
+  selected: SortKey | null;
+  visible: boolean;
+}) {
+  const [pending, setPending] = useState<SortKey | null>(selected);
+
+  // Re-seed the pending selection from the applied one each time the sheet
+  // opens, so a dismissed-without-applying change doesn't stick around.
+  useEffect(() => {
+    if (visible) setPending(selected);
+  }, [visible, selected]);
 
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
@@ -250,21 +300,29 @@ function SortSheet({ onClose, visible }: { onClose: () => void; visible: boolean
 
         <ScrollView contentContainerStyle={styles.sortList} showsVerticalScrollIndicator={false}>
           {sortOptions.map((option) => {
-            const isSelected = option.id === selected;
+            const isSelected = option.id === pending;
 
             return (
               <Pressable
+                disabled={!option.available}
                 key={option.id}
-                onPress={() => setSelected(option.id)}
-                style={[styles.sortRow, isSelected && styles.sortRowSelected]}
+                onPress={() => setPending(option.id as SortKey)}
+                style={[
+                  styles.sortRow,
+                  isSelected && styles.sortRowSelected,
+                  !option.available && styles.sortRowDisabled,
+                ]}
               >
                 <View style={styles.sortLeft}>
                   <Ionicons
-                    color={isSelected ? colors.sortSelected : colors.sortMuted}
+                    color={!option.available ? colors.radioIdle : isSelected ? colors.sortSelected : colors.sortMuted}
                     name={option.icon}
                     size={19}
                   />
-                  <Text style={styles.sortLabel}>{option.label}</Text>
+                  <Text style={[styles.sortLabel, !option.available && styles.sortLabelDisabled]}>
+                    {option.label}
+                  </Text>
+                  {!option.available ? <Text style={styles.comingSoonBadge}>Coming soon</Text> : null}
                 </View>
                 <View style={[styles.radio, isSelected && styles.radioSelected]}>
                   {isSelected ? <View style={styles.radioDot} /> : null}
@@ -275,7 +333,12 @@ function SortSheet({ onClose, visible }: { onClose: () => void; visible: boolean
         </ScrollView>
 
         <View style={styles.sheetFooter}>
-          <Pressable onPress={onClose}>
+          <Pressable
+            onPress={() => {
+              onApply(pending);
+              onClose();
+            }}
+          >
             <LinearGradient
               colors={[colors.gold, '#F6A400']}
               end={{ x: 1, y: 0 }}
@@ -285,7 +348,7 @@ function SortSheet({ onClose, visible }: { onClose: () => void; visible: boolean
               <Text style={styles.applyText}>Apply Sorting</Text>
             </LinearGradient>
           </Pressable>
-          <Pressable onPress={() => setSelected('popularity')} style={styles.resetButton}>
+          <Pressable onPress={() => setPending(null)} style={styles.resetButton}>
             <Text style={styles.resetText}>Reset</Text>
           </Pressable>
         </View>
@@ -328,10 +391,12 @@ function MainHeader({
 
 function SearchSection({
   onSort,
+  sortActive,
   value,
   onChangeText,
 }: {
   onSort: () => void;
+  sortActive: boolean;
   value: string;
   onChangeText: (text: string) => void;
 }) {
@@ -356,6 +421,7 @@ function SearchSection({
       </View>
       <Pressable onPress={onSort} style={styles.filterButton}>
         <Ionicons color={colors.white} name="options-outline" size={16} />
+        {sortActive ? <View style={styles.filterButtonDot} /> : null}
       </Pressable>
     </View>
   );
@@ -552,6 +618,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 1,
     shadowRadius: 6,
     width: 40,
+  },
+  filterButtonDot: {
+    backgroundColor: colors.sortSelected,
+    borderColor: colors.white,
+    borderRadius: 9999,
+    borderWidth: 1.5,
+    height: 10,
+    position: 'absolute',
+    right: -1,
+    top: -1,
+    width: 10,
   },
   content: {
     paddingBottom: 120,
@@ -853,6 +930,9 @@ const styles = StyleSheet.create({
   sortRowSelected: {
     backgroundColor: colors.sortSelectedBg,
   },
+  sortRowDisabled: {
+    opacity: 0.5,
+  },
   sortLeft: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -862,6 +942,15 @@ const styles = StyleSheet.create({
     color: colors.heading,
     fontFamily: 'Inter_500Medium',
     fontSize: 16,
+  },
+  sortLabelDisabled: {
+    color: colors.sortMuted,
+  },
+  comingSoonBadge: {
+    color: colors.sortMuted,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11,
+    fontStyle: 'italic',
   },
   radio: {
     alignItems: 'center',

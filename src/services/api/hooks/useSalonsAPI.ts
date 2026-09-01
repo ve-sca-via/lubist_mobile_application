@@ -22,6 +22,7 @@ export interface Salon {
   longitude?: number | null;
   average_rating?: number | null;
   total_reviews?: number | null;
+  created_at?: string | null;
   logo_url?: string | null;
   cover_images?: string[] | null;
   // Account kind ('salon' | 'regular_buyer') — NOT the establishment type.
