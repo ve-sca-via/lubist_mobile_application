@@ -14,6 +14,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   ServiceCategoryNode,
@@ -42,6 +43,7 @@ const GENDER_OPTIONS: Array<{ value: 'male' | 'female' | 'both'; label: string; 
 export function VendorServiceConfigureScreen() {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<Route>();
+  const insets = useSafeAreaInsets();
 
   const { data: services, isLoading: servicesLoading } = useVendorServices();
   const { data: categories } = useServiceCategories();
@@ -80,7 +82,7 @@ export function VendorServiceConfigureScreen() {
 
   if (servicesLoading && !services) {
     return (
-      <View style={styles.screen}>
+      <View style={[styles.screen, { paddingTop: insets.top }]}>
         <Header onBack={() => navigation.goBack()} />
         <ActivityIndicator color={palette.primary} style={styles.loader} />
       </View>
@@ -89,7 +91,7 @@ export function VendorServiceConfigureScreen() {
 
   if (!service) {
     return (
-      <View style={styles.screen}>
+      <View style={[styles.screen, { paddingTop: insets.top }]}>
         <Header onBack={() => navigation.goBack()} />
         <Text style={styles.emptyText}>Service not found.</Text>
       </View>
@@ -155,7 +157,7 @@ export function VendorServiceConfigureScreen() {
   }
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { paddingTop: insets.top }]}>
       <Header onBack={() => navigation.goBack()} />
       <ScrollView contentContainerStyle={styles.body}>
         <View style={styles.card}>

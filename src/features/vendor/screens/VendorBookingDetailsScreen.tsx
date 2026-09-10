@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { STATUS_COLORS, StatusBadge, getBookingDisplayStatus } from '@/features/vendor/components/StatusBadge';
 import { useUpdateVendorBookingStatus, useVendorBookings } from '@/services/api/hooks/useVendorAPI';
@@ -26,6 +27,7 @@ function formatDate(dateStr?: string): string {
 export function VendorBookingDetailsScreen() {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<Route>();
+  const insets = useSafeAreaInsets();
   const { data: bookings, isLoading } = useVendorBookings();
   const updateStatus = useUpdateVendorBookingStatus();
 
@@ -36,7 +38,7 @@ export function VendorBookingDetailsScreen() {
 
   if (isLoading && !bookings) {
     return (
-      <View style={styles.screen}>
+      <View style={[styles.screen, { paddingTop: insets.top }]}>
         <Header onClose={() => navigation.goBack()} />
         <ActivityIndicator color={palette.primary} style={styles.loader} />
       </View>
@@ -45,7 +47,7 @@ export function VendorBookingDetailsScreen() {
 
   if (!booking) {
     return (
-      <View style={styles.screen}>
+      <View style={[styles.screen, { paddingTop: insets.top }]}>
         <Header onClose={() => navigation.goBack()} />
         <View style={styles.body}>
           <Text style={styles.emptyText}>Booking not found.</Text>
@@ -71,7 +73,7 @@ export function VendorBookingDetailsScreen() {
   }
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { paddingTop: insets.top }]}>
       <Header onClose={() => navigation.goBack()} />
       <ScrollView contentContainerStyle={styles.body}>
         <View style={styles.idCard}>

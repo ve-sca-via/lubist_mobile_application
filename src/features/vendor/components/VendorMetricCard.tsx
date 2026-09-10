@@ -10,14 +10,22 @@ type VendorMetricCardProps = {
   label: string;
   badge?: string;
   badgeTone?: 'positive' | 'neutral';
+  iconColor?: string;
 };
 
 /** Matches the Figma "Overall Performance" metric cards: icon + optional trend pill, big value, label. */
-export function VendorMetricCard({ icon, value, label, badge, badgeTone = 'positive' }: VendorMetricCardProps) {
+export function VendorMetricCard({
+  icon,
+  value,
+  label,
+  badge,
+  badgeTone = 'positive',
+  iconColor = palette.primary,
+}: VendorMetricCardProps) {
   return (
     <View style={styles.card}>
       <View style={styles.topRow}>
-        <Ionicons name={icon} size={20} color={palette.primary} />
+        <Ionicons name={icon} size={20} color={iconColor} />
         {badge ? (
           <View style={[styles.badge, badgeTone === 'positive' ? styles.badgePositive : styles.badgeNeutral]}>
             <Text style={[styles.badgeLabel, badgeTone === 'positive' ? styles.badgeLabelPositive : styles.badgeLabelNeutral]}>

@@ -4,11 +4,30 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  LayoutAnimation,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  UIManager,
+  View,
+} from 'react-native';
 
 import { PaymentLockedNotice } from '@/features/vendor/components/PaymentLockedNotice';
 import { useVendorPaymentGate } from '@/features/vendor/hooks/useVendorPaymentGate';
-import { buildTaxonomyIndex, resolveServiceTaxonomy } from '@/features/vendor/utils/serviceTaxonomy';
+import {
+  buildTaxonomyIndex,
+  groupServicesByTaxonomy,
+  resolveServiceTaxonomy,
+  taxonomySearchText,
+  TaxonomyEntry,
+} from '@/features/vendor/utils/serviceTaxonomy';
 import {
   useDeleteVendorService,
   useServiceCategories,
@@ -20,6 +39,10 @@ import { Screen } from '@/shared/components/Screen';
 import { VendorStackParamList, VendorTabParamList } from '@/navigation/navigation.types';
 import { palette } from '@/theme/palette';
 import { typography } from '@/theme/typography';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 type Navigation = BottomTabNavigationProp<VendorTabParamList>;
 
@@ -39,6 +62,10 @@ const GENDER_TAG: Record<'male' | 'female' | 'both', { label: string; color: str
   both: { label: 'Unisex', color: palette.primary },
 };
 
+function animateNext() {
+  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+}
+
 export function VendorServicesScreen() {
   const navigation = useNavigation<Navigation>();
   const stackNavigation = navigation.getParent<NativeStackNavigationProp<VendorStackParamList>>();
@@ -52,42 +79,46 @@ export function VendorServicesScreen() {
   const [search, setSearch] = useState('');
   const [genderFilter, setGenderFilter] = useState<GenderFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(() => new Set());
 
   const taxonomyIndex = useMemo(() => buildTaxonomyIndex(categories ?? []), [categories]);
 
-  const filtered = useMemo(() => {
-    return (services ?? []).filter((service) => {
+  const entries = useMemo<TaxonomyEntry[]>(
+    () => (services ?? []).map((service) => ({ service, taxonomy: resolveServiceTaxonomy(service, taxonomyIndex) })),
+    [services, taxonomyIndex],
+  );
+
+  const filteredEntries = useMemo(() => {
+    return entries.filter(({ service, taxonomy }) => {
       if (genderFilter !== 'all' && (service.gender_category ?? 'both') !== genderFilter) return false;
       if (statusFilter === 'active' && !service.is_active) return false;
       if (statusFilter === 'inactive' && service.is_active) return false;
       if (search.trim()) {
         const q = search.trim().toLowerCase();
-        const resolved = resolveServiceTaxonomy(service, taxonomyIndex);
-        const path = [resolved?.categoryName, resolved?.subcategoryName, resolved?.subSubcategoryName]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
-        const haystack = `${service.name} ${service.description ?? ''} ${path}`.toLowerCase();
+        const haystack = `${service.name} ${service.description ?? ''} ${taxonomySearchText(taxonomy)}`.toLowerCase();
         if (!haystack.includes(q)) return false;
       }
       return true;
     });
-  }, [services, genderFilter, statusFilter, search, taxonomyIndex]);
+  }, [entries, genderFilter, statusFilter, search]);
 
-  const grouped = useMemo(() => {
-    const groups = new Map<string, VendorService[]>();
-    for (const service of filtered) {
-      const resolved = resolveServiceTaxonomy(service, taxonomyIndex);
-      const key = resolved?.categoryName ?? 'Other Services';
-      const list = groups.get(key) ?? [];
-      list.push(service);
-      groups.set(key, list);
-    }
-    return Array.from(groups.entries());
-  }, [filtered, taxonomyIndex]);
+  const groups = useMemo(
+    () => groupServicesByTaxonomy(filteredEntries, taxonomyIndex),
+    [filteredEntries, taxonomyIndex],
+  );
 
   if (isPaymentPending) {
     return <PaymentLockedNotice feeAmount={salon?.registration_fee_amount} />;
+  }
+
+  function toggleCategory(categoryId: string) {
+    animateNext();
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(categoryId)) next.delete(categoryId);
+      else next.add(categoryId);
+      return next;
+    });
   }
 
   async function handleToggleActive(service: VendorService) {
@@ -116,6 +147,10 @@ export function VendorServicesScreen() {
         },
       },
     ]);
+  }
+
+  function handleEdit(service: VendorService) {
+    stackNavigation?.navigate('ServiceConfigure', { serviceId: service.id });
   }
 
   return (
@@ -176,72 +211,139 @@ export function VendorServicesScreen() {
       </View>
 
       <Text style={styles.count}>
-        Showing {filtered.length} of {services?.length ?? 0} services
+        Showing {filteredEntries.length} of {services?.length ?? 0} services
       </Text>
 
       {isLoading && !services ? (
         <ActivityIndicator color={palette.primary} style={styles.loader} />
-      ) : filtered.length === 0 ? (
+      ) : filteredEntries.length === 0 ? (
         <View style={styles.emptyCard}>
           <Text style={styles.emptyText}>
             {services?.length ? 'No services match these filters' : 'No services yet — add your first one'}
           </Text>
         </View>
       ) : (
-        grouped.map(([categoryName, categoryServices]) => (
-          <View key={categoryName} style={styles.categorySection}>
-            <Text style={styles.categoryHeading}>{categoryName.toUpperCase()}</Text>
-            <View style={styles.list}>
-              {categoryServices.map((service) => {
-                const tag = GENDER_TAG[service.gender_category ?? 'both'];
-                return (
-                  <View key={service.id} style={styles.card}>
-                    <Text style={[styles.genderTag, { color: tag.color }]}>{tag.label}</Text>
-                    <View style={styles.serviceHeader}>
-                      <View style={styles.titleRow}>
-                        <Text style={styles.serviceName}>{service.name}</Text>
-                        <Pressable
-                          onPress={() => stackNavigation?.navigate('ServiceConfigure', { serviceId: service.id })}
-                        >
-                          <Ionicons name="pencil-outline" size={16} color={palette.muted} />
-                        </Pressable>
-                      </View>
-                      <View style={styles.headerActions}>
-                        <Pressable onPress={() => handleDelete(service)}>
-                          <Ionicons name="trash-outline" size={18} color="#c5221f" />
-                        </Pressable>
-                        <Switch
-                          value={service.is_active}
-                          onValueChange={() => handleToggleActive(service)}
-                          trackColor={{ true: palette.primary }}
-                        />
-                      </View>
-                    </View>
-                    {service.description ? (
-                      <Text style={styles.serviceDescription} numberOfLines={2}>
-                        {service.description}
-                      </Text>
-                    ) : null}
-                    <View style={styles.priceRow}>
-                      {service.discounted_price != null && service.discount_percentage ? (
-                        <>
-                          <Text style={styles.price}>₹{service.discounted_price}</Text>
-                          <Text style={styles.priceStrike}>₹{service.price}</Text>
-                          <View style={styles.discountBadge}>
-                            <Text style={styles.discountBadgeLabel}>{service.discount_percentage}% OFF</Text>
+        groups.map((group) => {
+          const collapsed = collapsedCategories.has(group.categoryId);
+          return (
+            <View key={group.categoryId} style={styles.categorySection}>
+              <Pressable
+                onPress={() => toggleCategory(group.categoryId)}
+                style={styles.categoryHeader}
+                hitSlop={4}
+              >
+                <Ionicons
+                  name="chevron-down"
+                  size={16}
+                  color="#867461"
+                  style={collapsed ? styles.chevronCollapsed : undefined}
+                />
+                <Text style={styles.categoryHeading}>{group.categoryName.toUpperCase()}</Text>
+                <Text style={styles.categoryCount}>
+                  {group.count} {group.count === 1 ? 'service' : 'services'}
+                </Text>
+              </Pressable>
+
+              {!collapsed && (
+                <View style={styles.list}>
+                  {group.subgroups.map((subgroup) => {
+                    const showSubHeading = !(
+                      group.subgroups.length === 1 && subgroup.subcategoryId === '__none__'
+                    );
+                    return (
+                      <View key={subgroup.subcategoryId} style={styles.subgroup}>
+                        {showSubHeading ? (
+                          <View style={styles.subHeadingRow}>
+                            <Text style={styles.subHeadingName}>{subgroup.subcategoryName}</Text>
+                            <View style={styles.subCountBadge}>
+                              <Text style={styles.subCountBadgeLabel}>{subgroup.services.length}</Text>
+                            </View>
+                            <View style={styles.subDivider} />
                           </View>
-                        </>
-                      ) : (
-                        <Text style={styles.price}>{service.price === 0 ? 'FREE' : `₹${service.price}`}</Text>
-                      )}
-                      <Text style={styles.duration}>{service.duration_minutes} min</Text>
-                    </View>
-                  </View>
-                );
-              })}
+                        ) : null}
+                        <View style={styles.list}>
+                          {subgroup.services.map(({ service, taxonomy }) => {
+                            const tag = GENDER_TAG[service.gender_category ?? 'both'];
+                            const subType = taxonomy.subSubcategoryName;
+                            const hasDiscount =
+                              service.discounted_price != null && !!service.discount_percentage;
+                            const displayPrice = hasDiscount ? service.discounted_price! : service.price;
+
+                            return (
+                              <View key={service.id} style={styles.card}>
+                                <View style={styles.cardHeader}>
+                                  <View style={styles.titleRow}>
+                                    <Text style={styles.serviceName} numberOfLines={1}>
+                                      {service.name}
+                                    </Text>
+                                    <Pressable onPress={() => handleEdit(service)} hitSlop={8}>
+                                      <Ionicons name="pencil-outline" size={16} color="#636363" />
+                                    </Pressable>
+                                  </View>
+                                  <Switch
+                                    value={service.is_active}
+                                    onValueChange={() => handleToggleActive(service)}
+                                    trackColor={{ true: palette.primary, false: '#D1D5DB' }}
+                                  />
+                                </View>
+
+                                {subType ? (
+                                  <View style={styles.subTypeChip}>
+                                    <Text style={styles.subTypeChipLabel}>{subType}</Text>
+                                  </View>
+                                ) : null}
+
+                                {service.description ? (
+                                  <Text style={styles.serviceDescription} numberOfLines={2}>
+                                    {service.description}
+                                  </Text>
+                                ) : null}
+
+                                <View style={styles.priceRow}>
+                                  {hasDiscount ? (
+                                    <>
+                                      <Text style={styles.price}>₹{displayPrice}</Text>
+                                      <Text style={styles.priceStrike}>₹{service.price}</Text>
+                                      <View style={styles.discountBadge}>
+                                        <Text style={styles.discountBadgeLabel}>
+                                          {service.discount_percentage}% OFF
+                                        </Text>
+                                      </View>
+                                    </>
+                                  ) : (
+                                    <Text style={styles.price}>
+                                      {service.price === 0 ? 'FREE' : `₹${service.price}`}
+                                    </Text>
+                                  )}
+                                  <View style={styles.durationWrap}>
+                                    <Ionicons name="time-outline" size={14} color="#867461" />
+                                    <Text style={styles.duration}>{service.duration_minutes} min</Text>
+                                  </View>
+                                </View>
+
+                                <Text style={[styles.genderTag, { color: tag.color }]}>{tag.label}</Text>
+
+                                <View style={styles.cardFooter}>
+                                  <Pressable style={styles.editButton} onPress={() => handleEdit(service)}>
+                                    <Ionicons name="pencil-outline" size={14} color={palette.primary} />
+                                    <Text style={styles.editButtonLabel}>Edit</Text>
+                                  </Pressable>
+                                  <Pressable style={styles.deleteButton} onPress={() => handleDelete(service)}>
+                                    <Ionicons name="trash-outline" size={16} color="#dc2626" />
+                                  </Pressable>
+                                </View>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
             </View>
-          </View>
-        ))
+          );
+        })
       )}
     </Screen>
   );
@@ -372,18 +474,63 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   categorySection: {
-    marginBottom: 24,
+    marginBottom: 20,
+  },
+  categoryHeader: {
+    alignItems: 'center',
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+  },
+  chevronCollapsed: {
+    transform: [{ rotate: '-90deg' }],
   },
   categoryHeading: {
     color: '#524533',
     fontSize: 12,
     fontWeight: typography.weight.bold,
     letterSpacing: 1.2,
-    marginBottom: 12,
-    marginLeft: 4,
+  },
+  categoryCount: {
+    color: '#867461',
+    fontSize: 12,
+    fontWeight: typography.weight.semibold,
   },
   list: {
+    gap: 16,
+  },
+  subgroup: {
     gap: 12,
+  },
+  subHeadingRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginLeft: 4,
+  },
+  subHeadingName: {
+    color: '#111827',
+    fontSize: 14,
+    fontWeight: typography.weight.bold,
+  },
+  subCountBadge: {
+    backgroundColor: '#eae0d3',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  subCountBadgeLabel: {
+    color: '#6b5844',
+    fontSize: 11,
+    fontWeight: typography.weight.bold,
+  },
+  subDivider: {
+    backgroundColor: '#f0e0d1',
+    flex: 1,
+    height: 1,
   },
   card: {
     backgroundColor: '#fffdfc',
@@ -394,12 +541,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 5,
   },
-  genderTag: {
-    fontSize: 10,
-    fontWeight: typography.weight.bold,
-    marginBottom: 4,
-  },
-  serviceHeader: {
+  cardHeader: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -413,13 +555,22 @@ const styles = StyleSheet.create({
   },
   serviceName: {
     color: '#111827',
+    flexShrink: 1,
     fontSize: 16,
     fontWeight: typography.weight.bold,
   },
-  headerActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 14,
+  subTypeChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#fff1e6',
+    borderRadius: 999,
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  subTypeChipLabel: {
+    color: '#865300',
+    fontSize: 12,
+    fontWeight: typography.weight.semibold,
   },
   serviceDescription: {
     color: '#4b5563',
@@ -429,6 +580,7 @@ const styles = StyleSheet.create({
   priceRow: {
     alignItems: 'center',
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginTop: 12,
   },
@@ -453,9 +605,52 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: typography.weight.bold,
   },
+  durationWrap: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    marginLeft: 'auto',
+  },
   duration: {
     color: palette.muted,
     fontSize: 12,
-    marginLeft: 'auto',
+  },
+  genderTag: {
+    fontSize: 12,
+    fontWeight: typography.weight.medium,
+    marginTop: 10,
+  },
+  cardFooter: {
+    borderTopColor: '#f0e0d1',
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 14,
+    paddingTop: 12,
+  },
+  editButton: {
+    alignItems: 'center',
+    borderColor: palette.primary,
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  editButtonLabel: {
+    color: palette.primary,
+    fontSize: 14,
+    fontWeight: typography.weight.semibold,
+  },
+  deleteButton: {
+    alignItems: 'center',
+    borderColor: '#fecaca',
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
   },
 });

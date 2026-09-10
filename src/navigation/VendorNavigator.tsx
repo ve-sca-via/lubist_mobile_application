@@ -45,20 +45,33 @@ export function VendorNavigator() {
   );
 }
 
+// Floating pill nav, matching the Figma "BottomNavigation" frame: rounded
+// rgba(252,235,220,0.95) bar inset from the screen edges, with the focused tab
+// raised into a gold circle instead of just a tinted icon.
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: palette.surface,
-    borderTopColor: palette.border,
-    height: 68,
-    paddingBottom: 8,
-    paddingTop: 8,
+    backgroundColor: 'rgba(252,235,220,0.95)',
+    borderTopWidth: 0,
+    borderRadius: 40,
+    bottom: 16,
+    elevation: 12,
+    height: 76,
+    left: 16,
+    paddingBottom: 12,
+    paddingTop: 12,
+    position: 'absolute',
+    right: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
   },
   tabItem: {
-    paddingTop: 4,
+    paddingTop: 0,
   },
   tabLabel: {
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   iconWrap: {
     alignItems: 'center',
@@ -69,11 +82,11 @@ const styles = StyleSheet.create({
   iconWrapActive: {
     backgroundColor: palette.primary,
     borderRadius: 999,
-    height: 40,
+    height: 48,
     shadowColor: palette.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 6,
-    width: 40,
+    width: 48,
   },
 });

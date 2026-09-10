@@ -193,10 +193,7 @@ export function CheckoutScreen() {
       {
         onSuccess: (booking) => {
           navigation.navigate('BookingConfirmed', {
-            bookingNumber: booking?.booking_number,
-            salonName: displaySalon,
-            bookingDate,
-            timeSlots,
+            booking: { ...booking, salon_name: booking?.salon_name ?? displaySalon },
           });
         },
         onError: (err: any) =>

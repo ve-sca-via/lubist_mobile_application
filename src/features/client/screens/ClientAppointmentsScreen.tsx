@@ -56,6 +56,42 @@ function servicesLabel(b: Booking) {
   return list.length > 1 ? `${first} +${list.length - 1} more` : first;
 }
 
+function timeSlotsLabel(b: Booking) {
+  if (b.time_slots?.length) return b.time_slots.join(', ');
+  return '';
+}
+
+const priceText = (v?: number | null) => `₹${Math.round(Number(v) || 0)}`;
+
+function paymentBreakdown(b: Booking) {
+  const services = b.services ?? [];
+  const originalServicesTotal = services.reduce((total: number, service: any) => {
+    const quantity = service.quantity || 1;
+    const originalUnitPrice = service.original_price ?? service.unit_price ?? service.price ?? 0;
+    return total + Number(originalUnitPrice) * quantity;
+  }, 0);
+  const servicePrice = Number(b.service_price ?? 0);
+  const convenienceFee = Number(b.convenience_fee ?? 0);
+  const bookingDiscountAmount = Math.max(0, originalServicesTotal - servicePrice);
+  const couponServiceDiscount = Number(b.discount_amount ?? 0);
+  const couponFeeDiscount = Number(b.convenience_fee_discount ?? 0);
+  const couponSavings = couponServiceDiscount + couponFeeDiscount;
+  const hasCoupon = Boolean(b.coupon_code) && couponSavings > 0;
+  const saleDiscount = Math.max(0, bookingDiscountAmount - couponServiceDiscount);
+  const convenienceFeeBeforeDiscount = convenienceFee + couponFeeDiscount;
+  return {
+    originalServicesTotal,
+    servicePrice,
+    convenienceFee,
+    couponServiceDiscount,
+    couponFeeDiscount,
+    couponSavings,
+    hasCoupon,
+    saleDiscount,
+    convenienceFeeBeforeDiscount,
+  };
+}
+
 function statusStyle(status: string) {
   const s = status?.toLowerCase();
   if (s === 'cancelled') return { pill: styles.statusCancelled, text: styles.statusTextCancelled };
@@ -67,6 +103,7 @@ export function ClientAppointmentsScreen() {
   const navigation = useNavigation<BookingsNavigation>();
   const parent = navigation.getParent<NativeStackNavigationProp<ClientStackParamList>>();
   const [tab, setTab] = useState<Tab>('upcoming');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const { data, isLoading, isError, refetch } = useMyBookings();
   const { mutate: cancelBooking, isPending: isCancelling } = useCancelBooking();
@@ -109,6 +146,15 @@ export function ClientAppointmentsScreen() {
     );
   };
 
+  const toggleExpanded = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const confirmCancel = (b: Booking) => {
     Alert.alert('Cancel booking', `Cancel your booking ${b.booking_number}? This can't be undone.`, [
       { text: 'Keep', style: 'cancel' },
@@ -137,7 +183,7 @@ export function ClientAppointmentsScreen() {
             style={[styles.segmentButton, tab === t && styles.segmentActive]}
           >
             <Text style={[styles.segmentText, tab === t && styles.segmentTextActive]}>
-              {t === 'upcoming' ? 'Upcoming' : 'Past'}
+              {t === 'upcoming' ? `Upcoming (${upcoming.length})` : `Past (${past.length})`}
             </Text>
           </Pressable>
         ))}
@@ -170,6 +216,9 @@ export function ClientAppointmentsScreen() {
               const logo = resolveImageUrl(booking.salon_logo_url);
               const canCancel = tab === 'upcoming';
               const isCompleted = booking.status?.toLowerCase() === 'completed';
+              const services = booking.services ?? [];
+              const isExpanded = expanded.has(booking.id);
+              const pay = paymentBreakdown(booking);
               return (
                 <View key={booking.id} style={styles.card}>
                   <View style={styles.cardTop}>
@@ -179,11 +228,14 @@ export function ClientAppointmentsScreen() {
                         {servicesLabel(booking)}
                       </Text>
                       <Text style={styles.salon}>{booking.salon_name ?? 'Salon'}</Text>
+                      {booking.booking_number ? (
+                        <Text style={styles.bookingNumber}>Booking #{booking.booking_number}</Text>
+                      ) : null}
                       <View style={styles.metaRow}>
                         <Ionicons color={colors.gold} name="time-outline" size={13} />
                         <Text style={styles.metaText}>
                           {formatDate(booking.booking_date)}
-                          {booking.time_slots?.[0] ? `, ${booking.time_slots[0]}` : ''}
+                          {timeSlotsLabel(booking) ? `, ${timeSlotsLabel(booking)}` : ''}
                         </Text>
                       </View>
                     </View>
@@ -192,29 +244,107 @@ export function ClientAppointmentsScreen() {
                     </View>
                   </View>
 
-                  {(() => {
-                    const savings =
-                      Number(booking.discount_amount ?? 0) +
-                      Number(booking.convenience_fee_discount ?? 0);
-                    const hasCoupon = Boolean(booking.coupon_code) && savings > 0;
-                    const payAtSalon = Number(booking.service_price ?? 0);
-                    return (
-                      <View style={styles.payRow}>
-                        <View>
-                          <Text style={styles.payLabel}>Pay at salon</Text>
-                          <Text style={styles.payAmount}>₹{payAtSalon.toFixed(0)}</Text>
-                        </View>
-                        {hasCoupon ? (
-                          <View style={styles.couponChip}>
-                            <Ionicons color={colors.green} name="pricetag" size={12} />
-                            <Text style={styles.couponText}>
-                              {booking.coupon_code} · saved ₹{savings.toFixed(0)}
-                            </Text>
+                  {services.length > 0 ? (
+                    <Pressable onPress={() => toggleExpanded(booking.id)} style={styles.detailsToggle}>
+                      <Text style={styles.detailsToggleText}>
+                        {isExpanded ? 'Hide details' : `Services Booked (${services.length})`}
+                      </Text>
+                      <Ionicons
+                        color={colors.gold}
+                        name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                        size={16}
+                      />
+                    </Pressable>
+                  ) : null}
+
+                  {isExpanded ? (
+                    <View style={styles.serviceList}>
+                      {services.map((service: any, idx: number) => {
+                        const name = service.service_name ?? service.name ?? 'Service';
+                        const quantity = service.quantity || 1;
+                        const unitPrice = Number(service.unit_price ?? service.price ?? 0);
+                        const originalPrice =
+                          service.original_price != null ? Number(service.original_price) : null;
+                        return (
+                          <View key={idx} style={styles.serviceRow}>
+                            <View style={styles.serviceInfo}>
+                              <Text style={styles.serviceName}>{name}</Text>
+                              {quantity > 1 ? (
+                                <Text style={styles.serviceMeta}>Quantity: {quantity}</Text>
+                              ) : null}
+                              {service.duration_minutes ? (
+                                <Text style={styles.serviceMeta}>{service.duration_minutes} mins</Text>
+                              ) : null}
+                            </View>
+                            <View style={styles.serviceAmount}>
+                              <Text style={styles.servicePrice}>{priceText(unitPrice * quantity)}</Text>
+                              {originalPrice && originalPrice > unitPrice ? (
+                                <Text style={styles.serviceStrike}>{priceText(originalPrice * quantity)}</Text>
+                              ) : null}
+                            </View>
                           </View>
-                        ) : null}
+                        );
+                      })}
+                    </View>
+                  ) : null}
+
+                  <View style={styles.paymentCard}>
+                    {pay.hasCoupon ? (
+                      <View style={styles.couponBadge}>
+                        <Ionicons color={colors.green} name="pricetag" size={12} />
+                        <Text style={styles.couponBadgeText}>
+                          {booking.coupon_code} applied — saved {priceText(pay.couponSavings)}
+                        </Text>
                       </View>
-                    );
-                  })()}
+                    ) : null}
+                    <View style={styles.priceRow}>
+                      <Text style={styles.priceLabel}>Original Service Total</Text>
+                      <Text style={styles.priceValue}>{priceText(pay.originalServicesTotal)}</Text>
+                    </View>
+                    {pay.saleDiscount > 0 ? (
+                      <View style={styles.priceRow}>
+                        <Text style={styles.priceLabel}>Sale Discount</Text>
+                        <Text style={styles.discountValue}>-{priceText(pay.saleDiscount)}</Text>
+                      </View>
+                    ) : null}
+                    {pay.couponServiceDiscount > 0 ? (
+                      <View style={styles.priceRow}>
+                        <Text style={styles.priceLabel}>
+                          Coupon{booking.coupon_code ? ` (${booking.coupon_code})` : ''}
+                        </Text>
+                        <Text style={styles.discountValue}>-{priceText(pay.couponServiceDiscount)}</Text>
+                      </View>
+                    ) : null}
+                    <View style={styles.priceRow}>
+                      <Text style={styles.priceLabel}>Service Total (Pay at Salon)</Text>
+                      <Text style={styles.priceValue}>{priceText(pay.servicePrice)}</Text>
+                    </View>
+                    {pay.couponFeeDiscount > 0 ? (
+                      <>
+                        <View style={styles.priceRow}>
+                          <Text style={styles.priceLabel}>Booking Fee</Text>
+                          <Text style={styles.priceValueStrike}>{priceText(pay.convenienceFeeBeforeDiscount)}</Text>
+                        </View>
+                        <View style={styles.priceRow}>
+                          <Text style={styles.priceLabel}>
+                            Fee Discount{booking.coupon_code ? ` (${booking.coupon_code})` : ''}
+                          </Text>
+                          <Text style={styles.discountValue}>-{priceText(pay.couponFeeDiscount)}</Text>
+                        </View>
+                      </>
+                    ) : null}
+                    <View style={styles.paymentDivider} />
+                    <View style={styles.priceRow}>
+                      <Text style={styles.payLabel}>Paid Online</Text>
+                      <Text style={styles.payAmount}>{priceText(pay.convenienceFee)}</Text>
+                    </View>
+                    {pay.servicePrice > 0 ? (
+                      <View style={styles.priceRow}>
+                        <Text style={styles.priceLabel}>Pay at Salon</Text>
+                        <Text style={styles.payAtSalonValue}>{priceText(pay.servicePrice)}</Text>
+                      </View>
+                    ) : null}
+                  </View>
 
                   <View style={styles.divider} />
 
@@ -306,26 +436,71 @@ const styles = StyleSheet.create({
   statusTextDone: { color: colors.muted },
   statusTextCancelled: { color: colors.red },
   divider: { backgroundColor: colors.border, height: 1, marginVertical: 14 },
-  payRow: {
+  bookingNumber: { color: colors.muted, fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 1 },
+  detailsToggle: {
     alignItems: 'center',
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
+    gap: 4,
+    justifyContent: 'center',
+    marginTop: 10,
+    paddingVertical: 6,
   },
-  payLabel: { color: colors.muted, fontFamily: 'Inter_500Medium', fontSize: 11 },
-  payAmount: { color: colors.heading, fontFamily: 'Montserrat_600SemiBold', fontSize: 16 },
-  couponChip: {
+  detailsToggleText: { color: colors.gold, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  serviceList: { gap: 8, marginTop: 6 },
+  serviceRow: {
+    alignItems: 'flex-start',
+    backgroundColor: colors.bg,
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+    padding: 10,
+  },
+  serviceInfo: { flex: 1, gap: 2 },
+  serviceName: { color: colors.heading, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  serviceMeta: { color: colors.muted, fontFamily: 'Inter_400Regular', fontSize: 11 },
+  serviceAmount: { alignItems: 'flex-end' },
+  servicePrice: { color: colors.gold, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  serviceStrike: {
+    color: colors.muted,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    textDecorationLine: 'line-through',
+  },
+  paymentCard: {
+    backgroundColor: colors.bg,
+    borderRadius: 12,
+    gap: 6,
+    marginTop: 12,
+    padding: 12,
+  },
+  couponBadge: {
     alignItems: 'center',
     backgroundColor: colors.greenBg,
     borderColor: colors.greenBorder,
     borderRadius: 8,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 4,
+    gap: 6,
+    marginBottom: 4,
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 6,
   },
-  couponText: { color: colors.green, fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+  couponBadgeText: { color: colors.green, flex: 1, fontFamily: 'Inter_500Medium', fontSize: 11 },
+  priceRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  priceLabel: { color: colors.text, flex: 1, fontFamily: 'Inter_400Regular', fontSize: 12, paddingRight: 8 },
+  priceValue: { color: colors.heading, fontFamily: 'Inter_500Medium', fontSize: 12 },
+  priceValueStrike: {
+    color: colors.muted,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    textDecorationLine: 'line-through',
+  },
+  discountValue: { color: colors.green, fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  paymentDivider: { backgroundColor: colors.border, height: 1, marginVertical: 4 },
+  payLabel: { color: colors.muted, fontFamily: 'Inter_500Medium', fontSize: 11 },
+  payAmount: { color: colors.heading, fontFamily: 'Montserrat_600SemiBold', fontSize: 16 },
+  payAtSalonValue: { color: colors.heading, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   actions: { flexDirection: 'row', gap: 12 },
   actionBtn: { alignItems: 'center', borderRadius: 12, flex: 1, flexDirection: 'row', gap: 6, justifyContent: 'center', paddingVertical: 11 },
   actionOutline: { backgroundColor: colors.white, borderColor: colors.border, borderWidth: 1 },

@@ -53,7 +53,8 @@
         {
           "photosPermission": "Lubist uses your photos to upload salon images and documents."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "eas": {

@@ -21,16 +21,15 @@ import type { AuthStackParamList } from '@/navigation/navigation.types';
 import { useAuth } from '@/store/AuthContext';
 import { useLogin } from '@/services/api/hooks/useAuthAPI';
 
-// This app only has customer screens today - the vendor, RM and admin modules
-// are placeholders. /auth/login itself has no role restriction (the web portal
-// shares it), so a staff account signs in fine and then lands on an empty stub,
-// or on nothing at all for relationship_manager, which has no matching route in
-// RootNavigator. Stop them here and send them to the portal that does work.
+// Vendor now has a full in-app module (VendorStackNavigator), so vendor accounts
+// are allowed through. RM and admin still only have a single placeholder screen
+// each - relationship_manager has no matching route in RootNavigator at all - so
+// those are stopped here and sent to the portal that actually works for them.
+// /auth/login itself has no role restriction (the web portal shares it).
 // Phone login needs no such gate - the backend already restricts it to customers.
-const CUSTOMER_ROLES = ['customer', 'client'];
+const ALLOWED_ROLES = ['customer', 'client', 'vendor'];
 
 const ROLE_LABELS: Record<string, string> = {
-  vendor: 'Salon partner',
   relationship_manager: 'Relationship manager',
   rm: 'Relationship manager',
   admin: 'Admin',
@@ -76,7 +75,7 @@ export function EmailLoginScreen() {
         onSuccess: (data) => {
           const role = data.user?.user_role || data.user?.role || 'customer';
 
-          if (!CUSTOMER_ROLES.includes(role)) {
+          if (!ALLOWED_ROLES.includes(role)) {
             // Returning without signIn leaves nothing behind - signIn is what
             // writes the tokens to SecureStore, so the session is simply dropped.
             Alert.alert(

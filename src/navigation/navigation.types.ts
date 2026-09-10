@@ -1,3 +1,5 @@
+import type { Booking } from '@/services/api/hooks/useBookingAPI';
+
 export type AppRole = 'admin' | 'rm' | 'vendor' | 'client';
 
 export type RootStackParamList = {
@@ -106,10 +108,7 @@ export type ClientStackParamList = {
     timeSlots: string[];
   };
   BookingConfirmed: {
-    bookingNumber?: string;
-    salonName?: string;
-    bookingDate?: string;
-    timeSlots?: string[];
+    booking: Booking;
   };
   ProductCatalog: {
     category?: string;

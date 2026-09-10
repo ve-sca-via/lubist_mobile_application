@@ -271,7 +271,15 @@ export function useCreateVendorService() {
   return useMutation({
     mutationFn: async (service: VendorServiceCreate) =>
       await apiPost<VendorService>('/api/v1/vendors/services', service),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['vendorServices'] }),
+    onSuccess: (_, service) => {
+      qc.invalidateQueries({ queryKey: ['vendorServices'] });
+      // Creating a service can mint a new category/subcategory server-side
+      // (e.g. the "add a new subcategory" free-text field) — refetch the
+      // taxonomy tree so it isn't missing from the next resolution pass.
+      if (service.category_name || service.subcategory_name || service.sub_subcategory_name) {
+        qc.invalidateQueries({ queryKey: ['vendorServiceCategories'] });
+      }
+    },
   });
 }
 
@@ -280,7 +288,12 @@ export function useUpdateVendorService() {
   return useMutation({
     mutationFn: async ({ serviceId, update }: { serviceId: string; update: VendorServiceUpdate }) =>
       await apiPut<VendorService>(`/api/v1/vendors/services/${serviceId}`, update),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['vendorServices'] }),
+    onSuccess: (_, { update }) => {
+      qc.invalidateQueries({ queryKey: ['vendorServices'] });
+      if (update.category_name || update.subcategory_name || update.sub_subcategory_name) {
+        qc.invalidateQueries({ queryKey: ['vendorServiceCategories'] });
+      }
+    },
   });
 }
 

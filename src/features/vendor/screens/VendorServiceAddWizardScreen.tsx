@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   ServiceCategoryNode,
@@ -38,6 +39,7 @@ interface WizardRow {
 
 export function VendorServiceAddWizardScreen() {
   const navigation = useNavigation<Navigation>();
+  const insets = useSafeAreaInsets();
   const { data: categories } = useServiceCategories();
   const createService = useCreateVendorService();
   const updateService = useUpdateVendorService();
@@ -278,7 +280,7 @@ export function VendorServiceAddWizardScreen() {
   }
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.topBar}>
         <Pressable onPress={handleBack} hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color="#1c1b1b" />

@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useActiveVendorPromotion, useApplyVendorPromotion } from '@/services/api/hooks/useVendorAPI';
 import { VendorStackParamList } from '@/navigation/navigation.types';
@@ -17,6 +18,7 @@ function todayIso(): string {
 
 export function VendorRunPromoScreen() {
   const navigation = useNavigation<Navigation>();
+  const insets = useSafeAreaInsets();
   const { data: activePromo, isLoading } = useActiveVendorPromotion();
   const applyPromo = useApplyVendorPromotion();
 
@@ -91,7 +93,7 @@ export function VendorRunPromoScreen() {
   }
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { paddingTop: insets.top }]}>
       <Header onBack={() => navigation.goBack()} />
       {isLoading ? (
         <ActivityIndicator color={palette.primary} style={styles.loader} />
