@@ -57,16 +57,17 @@
       ],
       "@react-native-community/datetimepicker"
     ],
+    "owner": "vescavia",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "extra": {
       "eas": {
-        "projectId": "0c5d02f8-8571-42f1-a61a-5aea92ddd8a5"
+        "projectId": "622b3d86-7342-4fb8-adfd-08ddc7d7430e"
       }
     },
     "updates": {
-      "url": "https://u.expo.dev/0c5d02f8-8571-42f1-a61a-5aea92ddd8a5"
-    },
-    "runtimeVersion": {
-      "policy": "appVersion"
+      "url": "https://u.expo.dev/622b3d86-7342-4fb8-adfd-08ddc7d7430e"
     }
   }
 }

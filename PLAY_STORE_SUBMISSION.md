@@ -11,7 +11,7 @@ For **direct-install APK / OTA** distribution (not the Play Store), see `RELEASE
 |---|---|
 | App name | Lubist Mobile |
 | Android package | `com.lubist.mobile` |
-| EAS project | `safdaraliniazi/lubist-mobile-application` (`0c5d02f8-8571-42f1-a61a-5aea92ddd8a5`) |
+| EAS project | `vescavia/lubist-mobile-application` (`622b3d86-7342-4fb8-adfd-08ddc7d7430e`) |
 | Store build profile | `production-store` (in `eas.json`) → outputs `.aab` |
 | Signing keystore | EAS-managed, `Build Credentials gKmAeJ6qb6 (default)` — same as APK builds |
 
