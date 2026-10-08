@@ -21,40 +21,76 @@ interface Props {
   onError: (message: string) => void;
 }
 
-const esc = (s?: string) => (s ?? '').replace(/["\\]/g, '');
+/** How long the Razorpay SDK gets to load before we give the customer an error. */
+const SDK_LOAD_TIMEOUT_MS = 20000;
+
+/**
+ * Serialize a value for embedding inside the `<script>` block below.
+ *
+ * This used to be a `replace(/["\\]/g, '')` on each value, interpolated into a
+ * `"..."` literal. That is not enough: `prefill` carries the signed-in user's own
+ * profile name/email/phone, and a name containing `</script>` closes the script
+ * element during HTML parsing regardless of the JS quoting — so a profile field
+ * could execute chosen JS inside the page that renders the payment form. A
+ * newline did not need to be malicious to break it either; it just made the
+ * literal a syntax error. `JSON.stringify` quotes correctly, and escaping `<`
+ * means no value can terminate the element. See docs/PAYMENT_FLOW_AUDIT.md C-6.
+ */
+const js = (value: unknown) =>
+  JSON.stringify(value ?? '')
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
 
 function buildHtml(order: RazorpayOrder, prefill: Props['prefill'], description: string) {
+  const options = {
+    key: order.key_id,
+    order_id: order.order_id,
+    amount: order.amount_paise,
+    currency: order.currency,
+    name: 'Lubist',
+    description,
+    prefill: {
+      name: prefill?.name ?? '',
+      email: prefill?.email ?? '',
+      contact: prefill?.contact ?? '',
+    },
+    theme: { color: '#F89E07' },
+  };
+
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-</head>
-<body style="background:#FFFAF5">
   <script>
     function post(type, payload) {
       window.ReactNativeWebView.postMessage(JSON.stringify({ type: type, payload: payload }));
     }
-    var options = {
-      key: "${esc(order.key_id)}",
-      order_id: "${esc(order.order_id)}",
-      amount: ${order.amount_paise},
-      currency: "${esc(order.currency)}",
-      name: "Lubist",
-      description: "${esc(description)}",
-      prefill: {
-        name: "${esc(prefill?.name)}",
-        email: "${esc(prefill?.email)}",
-        contact: "${esc(prefill?.contact)}"
-      },
-      theme: { color: "#F89E07" },
-      handler: function (response) { post("success", response); },
-      modal: { ondismiss: function () { post("dismiss", {}); }, escape: true }
-    };
+    // Watchdog, declared BEFORE the blocking <script> below so the timer is
+    // already running while it downloads. A *failed* SDK load throws in the try
+    // block further down and reports itself; a load that merely HANGS never runs
+    // that code at all, which used to leave the customer on a spinner with no
+    // way out but the close button (audit M-12).
+    window.__rzpOpened = false;
+    setTimeout(function () {
+      if (!window.__rzpOpened) {
+        post("error", { description: "Couldn't reach the payment provider. Please check your connection and try again." });
+      }
+    }, ${SDK_LOAD_TIMEOUT_MS});
+  </script>
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+</head>
+<body style="background:#FFFAF5">
+  <script>
+    var options = ${js(options)};
+    options.handler = function (response) { post("success", response); };
+    options.modal = { ondismiss: function () { post("dismiss", {}); }, escape: true };
     try {
       var rzp = new Razorpay(options);
       rzp.on("payment.failed", function (resp) { post("error", resp.error || {}); });
       rzp.open();
+      window.__rzpOpened = true;
     } catch (e) {
       post("error", { description: String(e) });
     }
@@ -98,6 +134,10 @@ export function RazorpayCheckout({ visible, order, prefill, description = 'Salon
             originWhitelist={['*']}
             source={{ html: buildHtml(order, prefill, description), baseUrl: 'https://checkout.razorpay.com' }}
             onMessage={handleMessage}
+            // Without these, a WebView that fails to render leaves the spinner
+            // below on screen with no explanation (audit M-12).
+            onError={() => onError("Couldn't open the payment screen. Please try again.")}
+            onHttpError={() => onError("Couldn't open the payment screen. Please try again.")}
             javaScriptEnabled
             domStorageEnabled
             startInLoadingState

@@ -68,6 +68,8 @@ export function CheckoutScreen() {
 
   const [order, setOrder] = useState<RazorpayOrder | null>(null);
   const [payVisible, setPayVisible] = useState(false);
+  // Non-null once the customer has been charged and before the booking is saved.
+  const [paidAttempt, setPaidAttempt] = useState<RazorpaySuccess | null>(null);
 
   // Coupon state
   const [couponInput, setCouponInput] = useState('');
@@ -112,6 +114,18 @@ export function CheckoutScreen() {
     setAppliedCoupon(null);
     setCouponMessage(null);
   }, [cartItemCount, serviceTotal]);
+
+  // Block Android hardware back and any gesture/header dismissal while a paid
+  // booking is still being recorded (audit C-2). `beforeRemove` covers every
+  // route of escape from this screen, unlike a BackHandler alone.
+  const confirming = paidAttempt != null;
+  useEffect(() => {
+    if (!confirming) return;
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      event.preventDefault();
+    });
+    return unsubscribe;
+  }, [confirming, navigation]);
 
   const applyCoupon = (codeArg?: string) => {
     const code = (codeArg ?? couponInput).trim().toUpperCase();
@@ -169,7 +183,15 @@ export function CheckoutScreen() {
   };
 
   const startPayment = () => {
-    createOrder(appliedCoupon?.coupon_code ?? undefined, {
+    // The appointment goes with the order, not only with the confirmation below.
+    // It is what lets the backend's `payment.captured` webhook complete this
+    // booking if `runCheckout` never gets to run — the app backgrounded mid-
+    // payment, the network dropped, the process killed.
+    createOrder({
+      couponCode: appliedCoupon?.coupon_code ?? undefined,
+      bookingDate,
+      timeSlots,
+    }, {
       onSuccess: (created) => {
         setOrder(created);
         setPayVisible(true);
@@ -178,8 +200,7 @@ export function CheckoutScreen() {
     });
   };
 
-  const handlePaymentSuccess = (result: RazorpaySuccess) => {
-    setPayVisible(false);
+  const runCheckout = (result: RazorpaySuccess) => {
     checkout(
       {
         booking_date: bookingDate,
@@ -192,24 +213,45 @@ export function CheckoutScreen() {
       },
       {
         onSuccess: (booking) => {
+          setPaidAttempt(null);
           navigation.navigate('BookingConfirmed', {
             booking: { ...booking, salon_name: booking?.salon_name ?? displaySalon },
           });
         },
+        // The payment went through; only our record of it didn't. Keep the
+        // attempt so the customer can retry the same payment instead of being
+        // told to contact support — /customers/cart/checkout short-circuits on
+        // razorpay_payment_id, so a retry is free and safe.
         onError: (err: any) =>
           Alert.alert(
-            'Booking failed',
-            err.message || 'Payment went through but the booking could not be confirmed. Please contact support.',
+            'Almost there',
+            err.message ||
+              "We took your payment but couldn't confirm the booking. Tap Retry — you won't be charged again.",
+            [{ text: 'Retry', onPress: () => runCheckout(result) }, { text: 'Later' }],
           ),
       },
     );
   };
 
+  const handlePaymentSuccess = (result: RazorpaySuccess) => {
+    setPayVisible(false);
+    // Marks the window between "charged" and "booking recorded". Until this is
+    // cleared the back button is disabled and a blocking overlay covers the
+    // screen — leaving here does not cancel the request, it just means the
+    // customer never sees the confirmation (audit C-2).
+    setPaidAttempt(result);
+    runCheckout(result);
+  };
+
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
       <View style={styles.headerWrap}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons color={colors.heading} name="arrow-back" size={16} />
+        <Pressable
+          disabled={confirming}
+          onPress={() => navigation.goBack()}
+          style={[styles.backButton, confirming && styles.backButtonDisabled]}
+        >
+          <Ionicons color={confirming ? colors.disabled : colors.heading} name="arrow-back" size={16} />
         </Pressable>
         <Text style={styles.headerTitle}>Checkout</Text>
       </View>
@@ -440,12 +482,31 @@ export function CheckoutScreen() {
           contact: (user?.phone ?? '').replace(/^\+/, ''),
         }}
         onSuccess={handlePaymentSuccess}
-        onDismiss={() => setPayVisible(false)}
+        // Both guarded on `confirming`: Razorpay reports a dismissal when its
+        // modal closes, including behind a payment that succeeded, and a late
+        // message must not look like a cancelled or failed payment (audit H-5).
+        onDismiss={() => {
+          if (confirming) return;
+          setPayVisible(false);
+        }}
         onError={(msg) => {
+          if (confirming) return;
           setPayVisible(false);
           Alert.alert('Payment failed', msg);
         }}
       />
+
+      {confirming ? (
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmCard}>
+            <ActivityIndicator color={colors.gold} size="large" />
+            <Text style={styles.confirmTitle}>Confirming your payment</Text>
+            <Text style={styles.confirmBody}>
+              Payment received. Please stay on this screen while we finish your booking.
+            </Text>
+          </View>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -652,4 +713,34 @@ const styles = StyleSheet.create({
   },
   payButtonDisabled: { backgroundColor: colors.disabled },
   payText: { color: colors.white, fontFamily: 'Inter_600SemiBold', fontSize: 14, letterSpacing: 0.35 },
+  backButtonDisabled: { opacity: 0.4 },
+  confirmOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    backgroundColor: 'rgba(34, 26, 17, 0.6)',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  confirmCard: {
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    gap: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+    width: '100%',
+  },
+  confirmTitle: {
+    color: colors.heading,
+    fontFamily: 'Montserrat_600SemiBold',
+    fontSize: 17,
+    textAlign: 'center',
+  },
+  confirmBody: {
+    color: colors.text,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+  },
 });

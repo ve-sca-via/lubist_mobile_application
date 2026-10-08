@@ -289,14 +289,31 @@ export function useValidateCoupon() {
   });
 }
 
+/** What `/payments/cart/create-order` accepts. All of it optional. */
+export type CartOrderInput = {
+  couponCode?: string;
+  /**
+   * The appointment the customer has already picked. Sent so the backend can pin
+   * it to the payment intent, which is what lets its `payment.captured` webhook
+   * finish the booking when this app never reports the success callback — the app
+   * backgrounded, the network dropped, the WebView killed. Not priced or
+   * validated here: `/customers/cart/checkout` still sends the authoritative
+   * date and slots when it runs.
+   */
+  bookingDate?: string;
+  timeSlots?: string[];
+};
+
 /** Creates the Razorpay order for the current cart (convenience fee). */
 export function useCreateCartOrder() {
   return useMutation({
-    mutationFn: async (couponCode?: string) =>
-      await apiPost<RazorpayOrder>(
-        '/api/v1/payments/cart/create-order',
-        couponCode ? { coupon_code: couponCode } : {},
-      ),
+    mutationFn: async (input: CartOrderInput = {}) => {
+      const body: Record<string, unknown> = {};
+      if (input.couponCode) body.coupon_code = input.couponCode;
+      if (input.bookingDate) body.booking_date = input.bookingDate;
+      if (input.timeSlots?.length) body.time_slots = input.timeSlots;
+      return await apiPost<RazorpayOrder>('/api/v1/payments/cart/create-order', body);
+    },
   });
 }
 
