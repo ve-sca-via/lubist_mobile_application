@@ -1,12 +1,11 @@
 import type { Booking } from '@/services/api/hooks/useBookingAPI';
 
-export type AppRole = 'admin' | 'rm' | 'vendor' | 'client';
+export type AppRole = 'admin' | 'rm' | 'client';
 
 export type RootStackParamList = {
   Auth: undefined;
   Admin: undefined;
   RM: undefined;
-  Vendor: undefined;
   Client: undefined;
 };
 
@@ -44,21 +43,6 @@ export type AuthStackParamList = {
   // track uses `Signup`, which requires a phone verification token.
   EmailSignup: undefined;
   ForgotPassword: undefined;
-};
-
-export type VendorTabParamList = {
-  Dashboard: undefined;
-  Profile: undefined;
-  Services: undefined;
-  Bookings: undefined;
-};
-
-export type VendorStackParamList = {
-  Tabs: undefined;
-  ServiceAddWizard: undefined;
-  ServiceConfigure: { serviceId: string };
-  BookingDetails: { bookingId: string };
-  RunPromo: undefined;
 };
 
 export type ClientTabParamList = {

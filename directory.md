@@ -18,7 +18,6 @@ project-mobile/
     │   ├── AuthNavigator.tsx
     │   ├── AdminNavigator.tsx
     │   ├── RMNavigator.tsx
-    │   ├── VendorNavigator.tsx
     │   ├── ClientNavigator.tsx
     │   └── navigation.types.ts
     │
@@ -26,7 +25,6 @@ project-mobile/
     │   ├── auth/
     │   ├── admin/
     │   ├── rm/
-    │   ├── vendor/
     │   ├── client/
     │   └── careers/
     │

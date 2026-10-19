@@ -38,7 +38,7 @@
 | Product Orders | 4 | 0 | 🔴 High |
 | Payments | 3 | 1 | 🟠 Medium |
 | Coupons (customer checkout) | 1 | 0 | 🔴 High |
-| Vendors | 18 | 0 | 🟠 Medium (coupon CRUD = web-only) |
+| Vendors | 18 | — | ➖ Moved to the standalone vendor app |
 | RM | 10 | 0 | 🟡 Low |
 | Careers | 5 | 0 | 🟡 Low |
 | Upload | 4 | 0 | 🟠 Medium |
@@ -263,26 +263,32 @@ The booking response gains `discount_amount`, `convenience_fee_discount`, `coupo
 ## 🧑‍💼 Vendors — `/api/v1/vendors`
 File: `backend/app/api/vendors.py`
 
+> **Not consumed by this app.** The in-app vendor dashboard was removed on
+> 2026-10-19 and now lives in the standalone Lubist vendor app, which tracks
+> these endpoints itself. Seed files: `g:\vescavia\Projects\lubist-vendor-app-seed`
+> (git tag `archive/vendor-module`). Rows are kept here only so the backend
+> surface stays fully listed.
+
 | Method | Path | Auth | Hook | Screen | Status |
 |--------|------|------|------|--------|--------|
-| POST | `/vendors/complete-registration` | bearer | — | — | ⬜ |
-| POST | `/vendors/process-payment` | bearer | — | — | ⬜ |
-| GET | `/vendors/salon` | bearer | — | VendorProfile | ⬜ |
-| PUT | `/vendors/salon` | bearer | — | VendorProfile | ⬜ |
-| GET | `/vendors/service-categories` | bearer | — | — | ⬜ |
-| GET | `/vendors/services` | bearer | — | VendorDashboard | ⬜ |
-| POST | `/vendors/services` | bearer | — | VendorDashboard | ⬜ |
-| PUT | `/vendors/services/{service_id}` | bearer | — | VendorDashboard | ⬜ |
-| DELETE | `/vendors/services/{service_id}` | bearer | — | VendorDashboard | ⬜ |
-| GET | `/vendors/promotions/active` | bearer | — | — | ⬜ |
-| POST | `/vendors/promotions/apply` | bearer | — | — | ⬜ |
-| GET | `/vendors/coupons` | bearer | — | (web vendor dashboard) | ➖ |
-| POST | `/vendors/coupons` | bearer | — | (web vendor dashboard) | ➖ |
-| PATCH | `/vendors/coupons/{coupon_id}` | bearer | — | (web vendor dashboard) | ➖ |
-| DELETE | `/vendors/coupons/{coupon_id}` | bearer | — | (web vendor dashboard) | ➖ |
-| GET | `/vendors/bookings` | bearer | — | VendorBookings | ⬜ |
-| PUT | `/vendors/bookings/{booking_id}/status` | bearer | — | VendorBookings | ⬜ |
-| GET | `/vendors/analytics` | bearer | — | VendorDashboard | ⬜ |
+| POST | `/vendors/complete-registration` | bearer | — | (vendor app) | ➖ |
+| POST | `/vendors/process-payment` | bearer | — | (vendor app) | ➖ |
+| GET | `/vendors/salon` | bearer | — | (vendor app) | ➖ |
+| PUT | `/vendors/salon` | bearer | — | (vendor app) | ➖ |
+| GET | `/vendors/service-categories` | bearer | — | (vendor app) | ➖ |
+| GET | `/vendors/services` | bearer | — | (vendor app) | ➖ |
+| POST | `/vendors/services` | bearer | — | (vendor app) | ➖ |
+| PUT | `/vendors/services/{service_id}` | bearer | — | (vendor app) | ➖ |
+| DELETE | `/vendors/services/{service_id}` | bearer | — | (vendor app) | ➖ |
+| GET | `/vendors/promotions/active` | bearer | — | (vendor app) | ➖ |
+| POST | `/vendors/promotions/apply` | bearer | — | (vendor app) | ➖ |
+| GET | `/vendors/coupons` | bearer | — | (vendor app) | ➖ |
+| POST | `/vendors/coupons` | bearer | — | (vendor app) | ➖ |
+| PATCH | `/vendors/coupons/{coupon_id}` | bearer | — | (vendor app) | ➖ |
+| DELETE | `/vendors/coupons/{coupon_id}` | bearer | — | (vendor app) | ➖ |
+| GET | `/vendors/bookings` | bearer | — | (vendor app) | ➖ |
+| PUT | `/vendors/bookings/{booking_id}/status` | bearer | — | (vendor app) | ➖ |
+| GET | `/vendors/analytics` | bearer | — | (vendor app) | ➖ |
 
 ---
 

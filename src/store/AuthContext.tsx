@@ -4,6 +4,12 @@ import { AppRole } from '@/navigation/navigation.types';
 import { getUser, setTokens, setUser, clearAuth } from '@/services/storage/tokenStorage';
 import { setOnAuthExpired } from '@/services/api/client';
 
+// Builds up to and including 1.x let vendors log in and manage their salon here.
+// That module now lives in the standalone vendor app, so a stored vendor session
+// has no stack to land on. Drop it on restore instead of leaving live tokens in
+// SecureStore behind a login screen the vendor can no longer get past.
+const RETIRED_ROLES = ['vendor'];
+
 type AuthContextValue = {
   isAuthenticated: boolean;
   role: AppRole | null;
@@ -26,8 +32,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
       try {
         const storedUser = await getUser();
         if (storedUser) {
-          setUserState(storedUser);
           const backendRole = storedUser.user_role || storedUser.role || 'client';
+
+          if (RETIRED_ROLES.includes(backendRole)) {
+            await clearAuth();
+            return;
+          }
+
+          setUserState(storedUser);
           setRole(backendRole === 'customer' ? 'client' : backendRole);
         }
       } catch (err) {
