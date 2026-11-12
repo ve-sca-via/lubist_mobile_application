@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPut, apiDelete } from '../client';
+import type { Schema, WithFields } from '../types';
 
 // ==========================================
 // FAVORITES (mapped from backend customers.py)
@@ -26,11 +27,8 @@ export interface FavoriteItem {
   [k: string]: any;
 }
 
-export interface FavoritesResponse {
-  success: boolean;
-  favorites: FavoriteItem[];
-  count: number;
-}
+// `favorites` is `object[]` in the contract, hence the hand-written FavoriteItem.
+export type FavoritesResponse = WithFields<Schema<'FavoritesResponse'>, { favorites: FavoriteItem[] }>;
 
 /** Normalize the salon id off a favorite row (full salon row, joined row, or id). */
 export const favoriteSalonId = (f: FavoriteItem) => f.salon_id ?? f.salon?.id ?? f.id ?? null;
@@ -47,7 +45,9 @@ export function useAddFavorite() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (salonId: string) =>
-      await apiPost('/api/v1/customers/favorites', { salon_id: salonId }),
+      await apiPost<Schema<'FavoriteOperationResponse'>>('/api/v1/customers/favorites', {
+        salon_id: salonId,
+      } satisfies Schema<'FavoriteCreate'>),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['favorites'] }),
   });
 }
@@ -56,7 +56,7 @@ export function useRemoveFavorite() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (salonId: string) =>
-      await apiDelete(`/api/v1/customers/favorites/${salonId}`),
+      await apiDelete<Schema<'FavoriteOperationResponse'>>(`/api/v1/customers/favorites/${salonId}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['favorites'] }),
   });
 }
@@ -78,25 +78,22 @@ export interface CustomerReview {
   [k: string]: any;
 }
 
-export interface CustomerReviewsResponse {
-  success: boolean;
-  reviews: CustomerReview[];
-  count: number;
-}
+// `reviews` / `review` are `object` in the contract, hence the hand-written CustomerReview.
+export type CustomerReviewsResponse = WithFields<
+  Schema<'CustomerReviewsResponse'>,
+  { reviews: CustomerReview[] }
+>;
 
-export interface ReviewOperationResponse {
-  success: boolean;
-  message: string;
-  review?: CustomerReview | null;
-}
+export type ReviewOperationResponse = WithFields<
+  Schema<'ReviewOperationResponse'>,
+  { review?: CustomerReview | null }
+>;
 
-/** Payload for creating a review — backend requires a completed booking_id. */
-export interface CreateReviewInput {
-  salon_id: string;
-  booking_id: string;
-  rating: number;
-  comment: string;
-}
+/**
+ * Payload for creating a review. The contract marks booking_id optional, but the
+ * backend only accepts a review against a completed booking, so the app requires it.
+ */
+export type CreateReviewInput = WithFields<Schema<'ReviewCreate'>, { booking_id: string }>;
 
 export function useMyReviews(enabled = true) {
   return useQuery({
@@ -131,7 +128,7 @@ export function useUpdateReview() {
       await apiPut<ReviewOperationResponse>(`/api/v1/customers/reviews/${reviewId}`, {
         rating,
         comment,
-      }),
+      } satisfies Schema<'ReviewUpdate'>),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['myReviews'] }),
   });
 }

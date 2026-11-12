@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -76,6 +76,8 @@ export function SignupScreen() {
   const { mutate: registerUser, isPending } = useSignup();
 
   const handleSignup = () => {
+    // The button is disabled until a gender is picked; the backend requires it.
+    if (gender === null) return;
     registerUser(
       {
         email: email.trim(),
@@ -84,7 +86,7 @@ export function SignupScreen() {
         full_name: fullName.trim(),
         phone: `+${countryCode}${phone}`,
         age: ageNum,
-        gender: gender ?? undefined,
+        gender,
         user_role: 'customer',
         verification_token: verificationToken,
       },

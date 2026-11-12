@@ -1,7 +1,7 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +22,8 @@ import type { ClientStackParamList } from '@/navigation/navigation.types';
 import { RelatedSalonsSection } from '@/features/client/components/RelatedSalonsSection';
 import { useAuth } from '@/store/AuthContext';
 import {
+  isSalonBookable,
+  SALON_NOT_BOOKABLE_MESSAGE,
   useSalonDetail,
   useSalonServices,
   useSalonReviews,
@@ -184,10 +186,10 @@ export function SalonDetailsScreen() {
   }, [servicesQuery.data]);
 
   const scrollRef = useRef<ScrollView>(null);
-  const heroScrollRef = useRef<ScrollView>(null);
-  const [heroIndex, setHeroIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<SectionKey>('services');
-  const [sectionOffsets, setSectionOffsets] = useState<Record<SectionKey, number>>({
+  // Section y-offsets are only read when a tab is tapped, so they live in a ref:
+  // as state, each section's onLayout re-rendered the whole screen.
+  const sectionOffsets = useRef<Record<SectionKey, number>>({
     about: 0,
     reviews: 0,
     services: 0,
@@ -195,42 +197,27 @@ export function SalonDetailsScreen() {
 
   const handleTabPress = (section: SectionKey) => {
     setActiveTab(section);
-    scrollRef.current?.scrollTo({ animated: true, y: Math.max(sectionOffsets[section] - 12, 0) });
+    scrollRef.current?.scrollTo({
+      animated: true,
+      y: Math.max(sectionOffsets.current[section] - 12, 0),
+    });
   };
 
   // Derived display values, falling back to whatever the list screen passed us.
   const name = salon?.business_name ?? routeSalon?.name ?? 'Salon';
-  const coverImages = (salon?.cover_images?.filter(Boolean) ?? [])
-    .map((u) => resolveImageUrl(u))
-    .filter((u): u is string => !!u);
-  const singleFallbackUri = resolveImageUrl(salon?.logo_url) ?? routeSalon?.heroImage ?? null;
-  const heroImages = coverImages.length > 0 ? coverImages : singleFallbackUri ? [singleFallbackUri] : [];
+  // Memoized so the (memoized) HeroGallery keeps the same array between renders.
+  const coverImagesRaw = salon?.cover_images;
+  const logoUrl = salon?.logo_url;
+  const routeHeroImage = routeSalon?.heroImage;
+  const heroImages = useMemo(() => {
+    const coverImages = (coverImagesRaw?.filter(Boolean) ?? [])
+      .map((u) => resolveImageUrl(u))
+      .filter((u): u is string => !!u);
+    const singleFallbackUri = resolveImageUrl(logoUrl) ?? routeHeroImage ?? null;
+    return coverImages.length > 0 ? coverImages : singleFallbackUri ? [singleFallbackUri] : [];
+  }, [coverImagesRaw, logoUrl, routeHeroImage]);
 
-  // Reset the hero pager whenever we land on a different salon (this screen
-  // instance can be reused when navigating between related salons).
-  useEffect(() => {
-    setHeroIndex(0);
-    heroScrollRef.current?.scrollTo({ animated: false, x: 0 });
-  }, [salonId]);
-
-  // Auto-advance the hero carousel every few seconds, looping back to the
-  // start after the last image. Only runs when there is more than one image.
-  useEffect(() => {
-    if (heroImages.length <= 1) return;
-    const timer = setInterval(() => {
-      setHeroIndex((current) => {
-        const next = (current + 1) % heroImages.length;
-        heroScrollRef.current?.scrollTo({ animated: true, x: next * HERO_WIDTH });
-        return next;
-      });
-    }, HERO_AUTOPLAY_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [heroImages.length]);
-
-  const handleThumbnailSelect = (index: number) => {
-    setHeroIndex(index);
-    heroScrollRef.current?.scrollTo({ animated: true, x: index * HERO_WIDTH });
-  };
+  const goBack = useCallback(() => navigation.goBack(), [navigation]);
 
   const locationText =
     (salon ? salonAddress(salon) : '') || routeSalon?.location || 'Location unavailable';
@@ -309,16 +296,7 @@ export function SalonDetailsScreen() {
     <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safeArea}>
       <View style={styles.screen}>
         <ScrollView contentContainerStyle={styles.content} ref={scrollRef} showsVerticalScrollIndicator={false}>
-          <SalonHero
-            activeIndex={heroIndex}
-            images={heroImages}
-            onBackPress={() => navigation.goBack()}
-            onIndexChange={setHeroIndex}
-            scrollRef={heroScrollRef}
-          />
-          {heroImages.length > 1 ? (
-            <ThumbnailGallery activeIndex={heroIndex} images={heroImages} onSelect={handleThumbnailSelect} />
-          ) : null}
+          <HeroGallery images={heroImages} onBackPress={goBack} salonId={salonId} />
 
           <SalonInfo
             name={name}
@@ -344,7 +322,7 @@ export function SalonDetailsScreen() {
           <View
             onLayout={(e) => {
               const y = e.nativeEvent.layout.y;
-              setSectionOffsets((p) => ({ ...p, services: y }));
+              sectionOffsets.current.services = y;
             }}
           >
             <CategoryGrid categories={categories} loading={servicesQuery.isLoading} onBook={openBooking} />
@@ -355,7 +333,7 @@ export function SalonDetailsScreen() {
           <View
             onLayout={(e) => {
               const y = e.nativeEvent.layout.y;
-              setSectionOffsets((p) => ({ ...p, reviews: y }));
+              sectionOffsets.current.reviews = y;
             }}
           >
             <ReviewsSection
@@ -370,7 +348,7 @@ export function SalonDetailsScreen() {
           <View
             onLayout={(e) => {
               const y = e.nativeEvent.layout.y;
-              setSectionOffsets((p) => ({ ...p, about: y }));
+              sectionOffsets.current.about = y;
             }}
           >
             <AboutSection name={name} description={salon?.description} />
@@ -381,7 +359,7 @@ export function SalonDetailsScreen() {
           <RelatedSalonsSection salonId={salonId} />
         </ScrollView>
 
-        <StickyBookButton onPress={openBooking} />
+        <StickyBookButton onPress={openBooking} bookable={isSalonBookable(salon)} />
       </View>
 
       <ReviewModal
@@ -394,6 +372,65 @@ export function SalonDetailsScreen() {
     </SafeAreaView>
   );
 }
+
+/**
+ * Hero pager + thumbnail strip. Owns the active-image state and the autoplay
+ * timer, so the 4-second auto-advance re-renders only this gallery - it used
+ * to re-render the whole salon page (reviews, related salons, ...) each tick.
+ */
+const HeroGallery = memo(function HeroGallery({
+  salonId,
+  images,
+  onBackPress,
+}: {
+  salonId?: string;
+  images: string[];
+  onBackPress: () => void;
+}) {
+  const heroScrollRef = useRef<ScrollView>(null);
+  const [heroIndex, setHeroIndex] = useState(0);
+
+  // Reset the hero pager whenever we land on a different salon (this screen
+  // instance can be reused when navigating between related salons).
+  useEffect(() => {
+    setHeroIndex(0);
+    heroScrollRef.current?.scrollTo({ animated: false, x: 0 });
+  }, [salonId]);
+
+  // Auto-advance the hero carousel every few seconds, looping back to the
+  // start after the last image. Only runs when there is more than one image.
+  useEffect(() => {
+    if (images.length <= 1) return;
+    const timer = setInterval(() => {
+      setHeroIndex((current) => {
+        const next = (current + 1) % images.length;
+        heroScrollRef.current?.scrollTo({ animated: true, x: next * HERO_WIDTH });
+        return next;
+      });
+    }, HERO_AUTOPLAY_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [images.length]);
+
+  const handleThumbnailSelect = (index: number) => {
+    setHeroIndex(index);
+    heroScrollRef.current?.scrollTo({ animated: true, x: index * HERO_WIDTH });
+  };
+
+  return (
+    <>
+      <SalonHero
+        activeIndex={heroIndex}
+        images={images}
+        onBackPress={onBackPress}
+        onIndexChange={setHeroIndex}
+        scrollRef={heroScrollRef}
+      />
+      {images.length > 1 ? (
+        <ThumbnailGallery activeIndex={heroIndex} images={images} onSelect={handleThumbnailSelect} />
+      ) : null}
+    </>
+  );
+});
 
 function SalonHero({
   images,
@@ -769,7 +806,7 @@ function timeAgo(iso: string) {
   return months === 1 ? '1 month ago' : `${months} months ago`;
 }
 
-function ReviewCard({ review }: { review: SalonReview }) {
+const ReviewCard = memo(function ReviewCard({ review }: { review: SalonReview }) {
   const stars = '★'.repeat(Math.round(review.rating)).padEnd(5, '☆');
   const initial = review.customer_name?.trim()?.[0]?.toUpperCase() ?? '?';
   return (
@@ -812,7 +849,7 @@ function ReviewCard({ review }: { review: SalonReview }) {
       ) : null}
     </View>
   );
-}
+});
 
 function AboutSection({ name, description }: { name: string; description?: string | null }) {
   return (
@@ -846,12 +883,26 @@ function LocationCard({ name, location }: { name: string; location: string }) {
   );
 }
 
-function StickyBookButton({ onPress }: { onPress: () => void }) {
+/**
+ * When the salon isn't taking bookings (inactive, or the owner switched
+ * bookings off) the button says so instead of leading to an ADD that the
+ * backend rejects. The services list stays browsable for prices.
+ */
+function StickyBookButton({ onPress, bookable }: { onPress: () => void; bookable: boolean }) {
   return (
     <View style={styles.bookButtonShell}>
-      <Pressable onPress={onPress} style={styles.bookButton}>
-        <Text style={styles.bookButtonText}>Book Services  →</Text>
-      </Pressable>
+      {bookable ? (
+        <Pressable onPress={onPress} style={styles.bookButton}>
+          <Text style={styles.bookButtonText}>Book Services  →</Text>
+        </Pressable>
+      ) : (
+        <>
+          <Pressable onPress={onPress} style={[styles.bookButton, styles.bookButtonUnavailable]}>
+            <Text style={styles.bookButtonText}>Bookings unavailable · View services</Text>
+          </Pressable>
+          <Text style={styles.bookUnavailableNote}>{SALON_NOT_BOOKABLE_MESSAGE}</Text>
+        </>
+      )}
     </View>
   );
 }
@@ -1501,5 +1552,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     fontSize: 16,
     letterSpacing: 0.4,
+  },
+  bookButtonUnavailable: { backgroundColor: '#A8A29E' },
+  bookUnavailableNote: {
+    color: '#78716C',
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    marginTop: 6,
+    textAlign: 'center',
   },
 });

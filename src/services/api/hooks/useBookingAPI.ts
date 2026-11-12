@@ -1,93 +1,40 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPut, apiDelete } from '../client';
+import type { ApiResponse, Schema, WithFields } from '../types';
 
 // ==========================================
-// TYPES (mapped from backend customers.py / payments.py)
+// TYPES - derived from the generated backend contract (see services/api/types.ts).
+// Hand-written overlays only where the contract declares a free-form `object`.
 // ==========================================
 
-export interface CartItem {
-  id: string;
-  service_id: string;
-  salon_id: string;
-  quantity: number;
-  unit_price: number;
-  line_total: number;
-  service_details: { name?: string; duration_minutes?: number; price?: number; [k: string]: any };
-  salon_details: Record<string, any>;
-}
+export type CartItem = WithFields<
+  Schema<'CartItem'>,
+  {
+    // `object` in the contract: the joined services/salons rows.
+    service_details: { name?: string; duration_minutes?: number; price?: number; [k: string]: any };
+    salon_details: Record<string, any>;
+  }
+>;
 
-export interface CartResponse {
-  success: boolean;
-  items: CartItem[];
-  salon_id?: string | null;
-  salon_name?: string | null;
-  total_amount: number;
-  item_count: number;
-}
+export type CartResponse = WithFields<Schema<'CartResponse'>, { items: CartItem[] }>;
 
-export interface RazorpayOrder {
-  order_id: string;
-  amount: number;
-  amount_paise: number;
-  currency: string;
-  key_id: string;
-  breakdown?: Record<string, any> | null;
-}
+export type RazorpayOrder = WithFields<
+  Schema<'RazorpayOrderResponse'>,
+  { breakdown?: Record<string, any> | null }
+>;
 
-export interface AvailableSlotsResponse {
-  salon_id: string;
-  date: string;
-  available_slots: string[];
-}
+export type AvailableSlotsResponse = Schema<'AvailableSlotsResponse'>;
 
-export interface CheckoutPayload {
-  booking_date: string;
-  time_slots: string[];
-  razorpay_order_id: string;
-  razorpay_payment_id: string;
-  razorpay_signature: string;
-  payment_method?: string;
-  notes?: string;
-  coupon_code?: string;
-}
+export type CheckoutPayload = Schema<'CartCheckoutCreate'>;
 
-export interface CouponBreakdown {
-  subtotal_service_price: number;
-  discount_amount: number;
-  service_total_due: number;
-  convenience_fee_base: number;
-  convenience_fee_discount: number;
-  convenience_fee_due: number;
-  total_amount: number;
-  discount_source?: string | null;
-}
+export type CouponBreakdown = Schema<'CouponDiscountBreakdown'>;
 
-export interface CouponValidationResult {
-  valid: boolean;
-  reason?: string | null;
-  coupon_id?: string | null;
-  coupon_code?: string | null;
-  breakdown?: CouponBreakdown | null;
-}
+export type CouponValidationResult = Schema<'CouponValidationResult'>;
 
 /** A customer-discoverable coupon ("available offers"). */
-export interface AvailableCoupon {
-  id: string;
-  code: string;
-  title?: string | null;
-  scope: string;
-  salon_id?: string | null;
-  applies_to: string;
-  discount_type: string;
-  discount_value: number;
-  max_discount_cap?: number | null;
-  min_order_amount?: number | null;
-  first_time_scope?: string | null;
-  valid_until?: string | null;
-  summary: string;
-  subtitle?: string | null;
-}
+export type AvailableCoupon = Schema<'AvailableCouponResponse'>;
 
+/** `configs` is a free-form key/value map in the contract. */
 export interface PublicConfigs {
   convenience_fee_percentage?: number;
   cancellation_window_hours?: number;
@@ -96,35 +43,22 @@ export interface PublicConfigs {
   [k: string]: any;
 }
 
-export interface Booking {
-  id: string;
-  booking_number: string;
-  salon_id: string;
-  booking_date: string;
-  time_slots: string[];
-  services: any[];
-  status: string;
-  payment_status?: string;
-  service_price?: number;
-  convenience_fee?: number;
-  total_amount?: number;
-  // Coupon / discount breakdown (0/null for legacy or no-coupon bookings).
-  subtotal_service_price?: number | null;
-  discount_amount?: number;
-  convenience_fee_discount?: number;
-  coupon_code?: string | null;
-  // Flattened by the backend's booking transform.
-  salon_name?: string | null;
-  salon_city?: string | null;
-  salon_logo_url?: string | null;
-  [k: string]: any;
-}
+/**
+ * A booking row. Checkout returns `BookingResponse`; `my-bookings` returns rows
+ * the contract only types as `object[]`, flattened by the backend's booking
+ * transform (salon_name / salon_city / salon_logo_url), hence the overlay.
+ */
+export type Booking = WithFields<
+  Schema<'BookingResponse'>,
+  {
+    services?: any[];
+    salon_name?: string | null;
+    salon_city?: string | null;
+    salon_logo_url?: string | null;
+  }
+> & { [k: string]: any };
 
-export interface MyBookingsResponse {
-  success: boolean;
-  data: Booking[];
-  count: number;
-}
+export type MyBookingsResponse = WithFields<Schema<'CustomerBookingsResponse'>, { data: Booking[] }>;
 
 // ==========================================
 // CART
@@ -137,17 +71,29 @@ export function useCart() {
   });
 }
 
+/**
+ * Add / remove share this key so overlapping taps can coordinate: the cart is
+ * refetched once, after the LAST in-flight change settles. Refetching after
+ * each one let an early response overwrite later optimistic lines, so the
+ * count and total flickered while a customer tapped ADD on several services.
+ */
+const CART_ITEM_MUTATION_KEY = ['cartItem'] as const;
+
+function settleCartChange(qc: ReturnType<typeof useQueryClient>) {
+  // This mutation still counts as in flight during onSettled.
+  if (qc.isMutating({ mutationKey: CART_ITEM_MUTATION_KEY }) <= 1) {
+    void qc.invalidateQueries({ queryKey: ['cart'] });
+  }
+}
+
 export function useAddToCart() {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: CART_ITEM_MUTATION_KEY,
     // `unit_price` is optional and used only to keep the optimistic cart total
     // accurate until the server response settles; the backend ignores it.
-    mutationFn: async (data: {
-      service_id: string;
-      salon_id?: string;
-      quantity?: number;
-      unit_price?: number;
-    }) => await apiPost('/api/v1/customers/cart', { quantity: 1, ...data }),
+    mutationFn: async (data: Schema<'CartItemCreate'> & { unit_price?: number }) =>
+      await apiPost<Schema<'CartOperationResponse'>>('/api/v1/customers/cart', { quantity: 1, ...data }),
     // Optimistically add the service so the "ADD" button flips to "ADDED"
     // instantly, without waiting for the POST + cart refetch round-trip.
     onMutate: async (data) => {
@@ -169,6 +115,8 @@ export function useAddToCart() {
           line_total: unitPrice * quantity,
           service_details: {},
           salon_details: {},
+          metadata: {},
+          created_at: new Date().toISOString(),
         };
         return {
           ...base,
@@ -180,10 +128,22 @@ export function useAddToCart() {
       });
       return { previous };
     },
-    onError: (_err, _data, ctx) => {
-      if (ctx?.previous) qc.setQueryData(['cart'], ctx.previous);
+    // Drop only this optimistic line. Restoring the pre-mutation snapshot would
+    // also wipe lines other in-flight adds put there.
+    onError: (_err, data) => {
+      qc.setQueryData<CartResponse>(['cart'], (old) => {
+        if (!old) return old;
+        const line = old.items.find((i) => i.id === `optimistic-${data.service_id}`);
+        if (!line) return old;
+        return {
+          ...old,
+          items: old.items.filter((i) => i !== line),
+          item_count: Math.max(0, old.item_count - line.quantity),
+          total_amount: Math.max(0, old.total_amount - line.line_total),
+        };
+      });
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['cart'] }),
+    onSettled: () => settleCartChange(qc),
   });
 }
 
@@ -199,6 +159,7 @@ export function useUpdateCartItem() {
 export function useRemoveCartItem() {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: CART_ITEM_MUTATION_KEY,
     mutationFn: async (itemId: string) => await apiDelete(`/api/v1/customers/cart/${itemId}`),
     // Optimistically drop the line so the button flips back to "ADD" instantly.
     onMutate: async (itemId) => {
@@ -217,10 +178,9 @@ export function useRemoveCartItem() {
       });
       return { previous };
     },
-    onError: (_err, _itemId, ctx) => {
-      if (ctx?.previous) qc.setQueryData(['cart'], ctx.previous);
-    },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['cart'] }),
+    // No snapshot restore (it would drop other in-flight changes): the refetch
+    // after the last change brings the line back.
+    onSettled: () => settleCartChange(qc),
   });
 }
 
@@ -259,7 +219,9 @@ export function useAvailableCoupons(salonId?: string) {
     queryKey: ['availableCoupons', salonId ?? null],
     queryFn: async () => {
       const qs = salonId ? `?salon_id=${encodeURIComponent(salonId)}` : '';
-      return await apiGet<AvailableCoupon[]>(`/api/v1/customers/available-coupons${qs}`);
+      return await apiGet<ApiResponse<'/api/v1/customers/available-coupons', 'get'>>(
+        `/api/v1/customers/available-coupons${qs}`,
+      );
     },
   });
 }
@@ -285,7 +247,9 @@ export function usePublicConfigs() {
 export function useValidateCoupon() {
   return useMutation({
     mutationFn: async (code: string) =>
-      await apiPost<CouponValidationResult>('/api/v1/customers/cart/validate-coupon', { code }),
+      await apiPost<CouponValidationResult>('/api/v1/customers/cart/validate-coupon', {
+        code,
+      } satisfies Schema<'CouponValidateRequest'>),
   });
 }
 
@@ -308,7 +272,7 @@ export type CartOrderInput = {
 export function useCreateCartOrder() {
   return useMutation({
     mutationFn: async (input: CartOrderInput = {}) => {
-      const body: Record<string, unknown> = {};
+      const body: Schema<'CartOrderCreate'> = {};
       if (input.couponCode) body.coupon_code = input.couponCode;
       if (input.bookingDate) body.booking_date = input.bookingDate;
       if (input.timeSlots?.length) body.time_slots = input.timeSlots;

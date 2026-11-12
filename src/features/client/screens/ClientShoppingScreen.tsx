@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -29,6 +29,7 @@ import {
   useProductCart,
   useProductCategories,
 } from '@/services/api/hooks/useProductsAPI';
+import { usePendingIds } from '@/shared/hooks/usePendingIds';
 
 const brandHaircare = require('@/assets/home/brand-haircare.png');
 const brandSkincare = require('@/assets/home/brand-skincare.png');
@@ -75,14 +76,34 @@ export function ClientShoppingScreen() {
   const navigation = useNavigation<ShoppingNavigation>();
   const parent = navigation.getParent<NativeStackNavigationProp<ClientStackParamList>>();
   const openCatalog = (category?: string) => parent?.navigate('ProductCatalog', { category });
-  const openProduct = (product: Product) =>
-    parent?.navigate('ProductDetail', { productId: product.id, productName: product.brand ?? product.name });
+  const openProduct = useCallback(
+    (product: Product) =>
+      parent?.navigate('ProductDetail', {
+        productId: product.id,
+        productName: product.brand ?? product.name,
+      }),
+    [parent],
+  );
 
   const [search, setSearch] = useState('');
   const categoriesQuery = useProductCategories();
   const featuredQuery = useFeaturedProducts();
   const cart = useProductCart();
-  const addToCart = useAddToProductCart();
+  // Stable callbacks (mutateAsync, not the mutation object) so the memoized
+  // product cards don't re-render on every keystroke in the search box.
+  const { mutateAsync: addToCart } = useAddToProductCart();
+  const pending = usePendingIds();
+  const { add: markPending, remove: clearPending } = pending;
+  const addProduct = useCallback(
+    (product: Product) => {
+      markPending(product.id);
+      // Errors were silent before too (mutate with no handlers); keep it that way.
+      addToCart({ product_id: product.id })
+        .catch(() => {})
+        .finally(() => clearPending(product.id));
+    },
+    [addToCart, markPending, clearPending],
+  );
 
   const categories = categoriesQuery.data?.categories ?? [];
   const products = featuredQuery.data?.products ?? [];
@@ -191,45 +212,61 @@ export function ClientShoppingScreen() {
           <Text style={styles.emptyText}>No trending products right now.</Text>
         ) : (
           <View style={styles.grid}>
-            {products.map((product) => {
-              const original = originalPrice(product);
-              const discount = discountLabel(product);
-              const uri = productImageUri(product);
-              return (
-                <Pressable key={product.id} onPress={() => openProduct(product)} style={styles.card}>
-                  <Image
-                    source={uri ? { uri } : productFallback}
-                    style={styles.productImage}
-                  />
-                  <Text style={styles.productBrand}>{product.brand ?? product.name}</Text>
-                  <Text numberOfLines={2} style={styles.productDesc}>
-                    {product.short_description ?? product.name}
-                  </Text>
-                  {product.weight ? <Text style={styles.productSize}>{product.weight}</Text> : null}
-                  <View style={styles.priceRow}>
-                    {original ? (
-                      <Text style={styles.priceOriginal}>{formatPrice(original)}</Text>
-                    ) : null}
-                    <Text style={styles.priceSale}>{formatPrice(effectivePrice(product))}</Text>
-                    {discount ? <Text style={styles.priceDiscount}>{discount}</Text> : null}
-                  </View>
-                  <Pressable
-                    disabled={addToCart.isPending}
-                    onPress={() => addToCart.mutate({ product_id: product.id })}
-                    style={styles.addButton}
-                  >
-                    <Text style={styles.addText}>Add</Text>
-                    <Ionicons color={colors.white} name="bag-add-outline" size={11} />
-                  </Pressable>
-                </Pressable>
-              );
-            })}
+            {products.map((product) => (
+              <TrendingProductCard
+                key={product.id}
+                adding={pending.ids.has(product.id)}
+                onAdd={addProduct}
+                onOpen={openProduct}
+                product={product}
+              />
+            ))}
           </View>
         )}
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+/** One "Trending now" card; memoized so search typing doesn't re-render the grid. */
+const TrendingProductCard = memo(function TrendingProductCard({
+  product,
+  adding,
+  onOpen,
+  onAdd,
+}: {
+  product: Product;
+  adding: boolean;
+  onOpen: (product: Product) => void;
+  onAdd: (product: Product) => void;
+}) {
+  const original = originalPrice(product);
+  const discount = discountLabel(product);
+  const uri = productImageUri(product);
+  return (
+    <Pressable onPress={() => onOpen(product)} style={styles.card}>
+      <Image
+        resizeMode="cover"
+        source={uri ? { uri } : productFallback}
+        style={styles.productImage}
+      />
+      <Text style={styles.productBrand}>{product.brand ?? product.name}</Text>
+      <Text numberOfLines={2} style={styles.productDesc}>
+        {product.short_description ?? product.name}
+      </Text>
+      {product.weight ? <Text style={styles.productSize}>{product.weight}</Text> : null}
+      <View style={styles.priceRow}>
+        {original ? <Text style={styles.priceOriginal}>{formatPrice(original)}</Text> : null}
+        <Text style={styles.priceSale}>{formatPrice(effectivePrice(product))}</Text>
+        {discount ? <Text style={styles.priceDiscount}>{discount}</Text> : null}
+      </View>
+      <Pressable disabled={adding} onPress={() => onAdd(product)} style={styles.addButton}>
+        <Text style={styles.addText}>Add</Text>
+        <Ionicons color={colors.white} name="bag-add-outline" size={11} />
+      </Pressable>
+    </Pressable>
+  );
+});
 
 const styles = StyleSheet.create({
   safeArea: {

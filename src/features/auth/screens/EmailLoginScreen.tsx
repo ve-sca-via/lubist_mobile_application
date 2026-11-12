@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,17 +19,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { env } from '@/app/config/env';
 import type { AuthStackParamList } from '@/navigation/navigation.types';
 import { useAuth } from '@/store/AuthContext';
+import { isHandledGlobally } from '@/services/api/client';
 import { useLogin } from '@/services/api/hooks/useAuthAPI';
+import { appGate } from '@/services/appGate/appGateStore';
 
-// Vendor now has a full in-app module (VendorStackNavigator), so vendor accounts
-// are allowed through. RM and admin still only have a single placeholder screen
-// each - relationship_manager has no matching route in RootNavigator at all - so
-// those are stopped here and sent to the portal that actually works for them.
-// /auth/login itself has no role restriction (the web portal shares it).
+// This app is customers only. /auth/login itself has no role restriction (the
+// web portal shares it), so every other role is stopped here and pointed at the
+// surface that actually works for it. Vendors used to have an in-app module;
+// it moved to the standalone vendor app, so they're now turned away too.
 // Phone login needs no such gate - the backend already restricts it to customers.
-const ALLOWED_ROLES = ['customer', 'client', 'vendor'];
+const ALLOWED_ROLES = ['customer', 'client'];
 
 const ROLE_LABELS: Record<string, string> = {
+  vendor: 'Salon partner',
   relationship_manager: 'Relationship manager',
   rm: 'Relationship manager',
   admin: 'Admin',
@@ -78,9 +80,15 @@ export function EmailLoginScreen() {
           if (!ALLOWED_ROLES.includes(role)) {
             // Returning without signIn leaves nothing behind - signIn is what
             // writes the tokens to SecureStore, so the session is simply dropped.
+            if (role === 'vendor') {
+              // Same screen the backend's 403 USE_PARTNER_APP opens (AppGate).
+              appGate.showWrongApp('other_app', null);
+              return;
+            }
+            const portal = env.webBaseUrl.replace(/^https?:\/\//, '');
             Alert.alert(
               'Use the web portal',
-              `${ROLE_LABELS[role] ?? 'Staff'} accounts are managed on the Lubist web portal (${env.webBaseUrl.replace(/^https?:\/\//, '')}). The app is for customer accounts.`,
+              `${ROLE_LABELS[role] ?? 'Staff'} accounts are managed on the Lubist web portal (${portal}). The app is for customer accounts.`,
             );
             return;
           }
@@ -92,6 +100,8 @@ export function EmailLoginScreen() {
           });
         },
         onError: (error: any) => {
+          // Update-required / partner-account errors open a full-screen gate.
+          if (isHandledGlobally(error)) return;
           Alert.alert('Login Failed', error.message || 'Invalid email or password.');
         }
       }

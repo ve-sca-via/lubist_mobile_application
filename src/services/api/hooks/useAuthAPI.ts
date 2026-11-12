@@ -1,72 +1,42 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiDelete, apiGet, apiPost, apiPut } from '../client';
+import type { ApiRequestBody, Schema, WithFields } from '../types';
 
 // ==========================================
-// TYPES & INTERFACES (Mapped from auth.py)
+// TYPES - derived from the generated backend contract (see services/api/types.ts).
+// Edit the backend schema + `npm run api:types`, not these aliases.
 // ==========================================
 
-export interface LoginRequest { email?: string; password?: string; }
-export interface SignupRequest { 
-  email?: string; 
-  password?: string; 
-  full_name?: string; 
-  phone?: string; 
-  age?: number; 
-  gender?: string; 
-  user_role?: string; 
-  verification_token?: string; 
-}
-export interface RefreshTokenRequest { refresh_token: string; }
-export interface UserProfileUpdate { 
-  full_name?: string; 
-  phone?: string; 
-  age?: number; 
-  gender?: string; 
-}
-export interface LogoutAllRequest { password?: string; }
-export interface AccountDeleteRequest {
-  /** Must be the literal string "DELETE" - the backend rejects anything else. */
-  confirmation: string;
-  /** Identity proof: password OR verification_id + otp. Phone-first signups have
-   *  no password they know, so they confirm with an OTP instead. */
-  password?: string;
-  verification_id?: string;
-  otp?: string;
-}
-export interface AccountDeleteResponse {
+export type LoginRequest = Schema<'LoginRequest'>;
+export type SignupRequest = Schema<'SignupRequest'>;
+export type SignupResponse = Schema<'SignupResponse'>;
+export type RefreshTokenRequest = Schema<'RefreshTokenRequest'>;
+export type UserProfileUpdate = ApiRequestBody<'/api/v1/auth/me', 'put'>;
+export type LogoutAllRequest = Schema<'LogoutAllRequest'>;
+/** `confirmation` must be the literal string "DELETE"; identity proof is password OR verification_id + otp. */
+export type AccountDeleteRequest = Schema<'AccountDeleteRequest'>;
+export type AccountDeleteResponse = Schema<'AccountDeleteResponse'>;
+export type PasswordResetRequest = Schema<'PasswordResetRequest'>;
+export type PasswordResetConfirm = Schema<'PasswordResetConfirm'>;
+
+// Phone API shared types
+export type PhoneOTPRequest = Schema<'PhoneLoginSendOTPRequest'>;
+export type PhoneOTPResponse = Schema<'PhoneLoginSendOTPResponse'>;
+export type PhoneVerificationSendResponse = Schema<'PhoneVerificationSendOTPResponse'>;
+export type PhoneVerifyRequest = Schema<'PhoneLoginVerifyOTPRequest'>;
+export type PhoneVerificationConfirmResponse = Schema<'PhoneVerificationConfirmResponse'>;
+
+// The contract types `user` as a free-form object (the profile row), so it is
+// widened to `any` here for the screens that read role/name off it.
+export type AuthTokensResponse = WithFields<Schema<'LoginResponse'>, { user: any }>;
+export type PhoneLoginResponse = WithFields<Schema<'PhoneLoginVerifyOTPResponse'>, { user: any }>;
+
+/** `/auth/signup/phone/verify-otp` has no declared response model; this is what it returns. */
+export interface PhoneSignupVerifyResponse {
   success: boolean;
-  message: string;
-  deleted_at: string;
-  retained_records: Record<string, number>;
-}
-export interface PasswordResetRequest { email: string; }
-export interface PasswordResetConfirm { token: string; new_password?: string; }
-
-// Phone API Shared Types
-export interface PhoneOTPRequest { 
-  phone: string; 
-  country_code?: string; 
-}
-export interface PhoneOTPResponse { 
-  success: boolean; 
-  message: string; 
-  verification_id: string; 
-  expires_in: number; 
-  phone: string; 
-  customer_name?: string; 
-}
-export interface PhoneVerifyRequest { 
-  phone: string; 
-  otp: string; 
-  verification_id: string; 
-}
-export interface AuthTokensResponse { 
-  success: boolean; 
-  message: string; 
-  access_token: string; 
-  refresh_token: string; 
-  token_type: string; 
-  user: any; 
+  message?: string;
+  verification_token: string;
+  [k: string]: any;
 }
 
 // ==========================================
@@ -81,7 +51,7 @@ export function useLogin() {
 
 export function useSignup() {
   return useMutation({
-    mutationFn: async (data: SignupRequest) => await apiPost<any>('/api/v1/auth/signup', data)
+    mutationFn: async (data: SignupRequest) => await apiPost<SignupResponse>('/api/v1/auth/signup', data)
   });
 }
 
@@ -127,7 +97,7 @@ export function useLogoutAll() {
 /** Sends a deletion-confirmation OTP to the phone already on the account. */
 export function useSendAccountDeletionOtp() {
   return useMutation({
-    mutationFn: async () => await apiPost<PhoneOTPResponse>('/api/v1/auth/me/delete/send-otp', {}),
+    mutationFn: async () => await apiPost<PhoneVerificationSendResponse>('/api/v1/auth/me/delete/send-otp', {}),
   });
 }
 
@@ -144,13 +114,13 @@ export function useDeleteAccount() {
 
 export function usePasswordReset() {
   return useMutation({
-    mutationFn: async (data: PasswordResetRequest) => await apiPost<any>('/api/v1/auth/password-reset', data)
+    mutationFn: async (data: PasswordResetRequest) => await apiPost<Schema<'PasswordResetResponse'>>('/api/v1/auth/password-reset', data)
   });
 }
 
 export function usePasswordResetConfirm() {
   return useMutation({
-    mutationFn: async (data: PasswordResetConfirm) => await apiPost<any>('/api/v1/auth/password-reset/confirm', data)
+    mutationFn: async (data: PasswordResetConfirm) => await apiPost<Schema<'PasswordResetConfirmResponse'>>('/api/v1/auth/password-reset/confirm', data)
   });
 }
 
@@ -172,7 +142,7 @@ export function useSendSignupPhoneOtp() {
 
 export function useVerifySignupPhoneOtp() {
   return useMutation({
-    mutationFn: async (data: PhoneVerifyRequest) => await apiPost<any>('/api/v1/auth/signup/phone/verify-otp', data)
+    mutationFn: async (data: PhoneVerifyRequest) => await apiPost<PhoneSignupVerifyResponse>('/api/v1/auth/signup/phone/verify-otp', data)
   });
 }
 
@@ -188,7 +158,7 @@ export function useSendPhoneOtp() {
 
 export function useVerifyPhoneOtp() {
   return useMutation({
-    mutationFn: async (data: PhoneVerifyRequest) => await apiPost<AuthTokensResponse>('/api/v1/auth/login/phone/verify-otp', data)
+    mutationFn: async (data: PhoneVerifyRequest) => await apiPost<PhoneLoginResponse>('/api/v1/auth/login/phone/verify-otp', data)
   });
 }
 
@@ -198,12 +168,12 @@ export function useVerifyPhoneOtp() {
 
 export function useSendVerifyPhoneOtp() {
   return useMutation({
-    mutationFn: async (data: PhoneOTPRequest) => await apiPost<PhoneOTPResponse>('/api/v1/auth/verify-phone/send-otp', data)
+    mutationFn: async (data: PhoneOTPRequest) => await apiPost<PhoneVerificationSendResponse>('/api/v1/auth/verify-phone/send-otp', data)
   });
 }
 
 export function useConfirmVerifyPhoneOtp() {
   return useMutation({
-    mutationFn: async (data: PhoneVerifyRequest) => await apiPost<any>('/api/v1/auth/verify-phone/confirm-otp', data)
+    mutationFn: async (data: PhoneVerifyRequest) => await apiPost<PhoneVerificationConfirmResponse>('/api/v1/auth/verify-phone/confirm-otp', data)
   });
 }

@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { AuthStackParamList } from '@/navigation/navigation.types';
 import { useAuth } from '@/store/AuthContext';
+import { isHandledGlobally } from '@/services/api/client';
 import {
   useVerifyPhoneOtp,
   useVerifySignupPhoneOtp,
@@ -122,6 +123,8 @@ export function OtpVerifyScreen() {
             });
           },
           onError: (error: any) => {
+            // Update-required / partner-account errors open a full-screen gate.
+            if (isHandledGlobally(error)) return;
             Alert.alert('Verification Failed', error.message || 'Invalid or expired OTP. Please try again.');
           }
         }

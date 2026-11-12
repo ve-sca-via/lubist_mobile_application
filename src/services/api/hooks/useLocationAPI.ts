@@ -1,37 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '../client';
+import type { Schema, WithFields } from '../types';
 
 // ==========================================
 // TYPES (mapped from backend/app/api/location.py)
 // ==========================================
 
-export interface NearbySalon {
-  id: string;
-  business_name: string;
-  description?: string | null;
-  address?: string | null;
-  city?: string | null;
-  state?: string | null;
-  pincode?: string | null;
-  phone?: string | null;
-  email?: string | null;
-  latitude?: number | null;
-  longitude?: number | null;
-  average_rating?: number | null;
-  total_reviews?: number | null;
-  logo_url?: string | null;
-  cover_images?: string[] | null;
-  distance_km?: number | null;
-  // Kind of establishment ('spa' | 'barber_shop' | …). The PostGIS function
-  // doesn't return it; the backend attaches it from the vendor join request.
-  business_type?: string | null;
-}
+/** Same shape as the public listings (`SalonListResponse`), plus `distance_km`. */
+export type NearbySalon = Schema<'SalonListResponse'>;
 
-export interface NearbySalonsResponse {
-  salons: NearbySalon[];
-  count: number;
-  query: { latitude: number; longitude: number; radius_km: number };
-}
+export type NearbySalonsResponse = WithFields<
+  Schema<'NearbySalonsResponse'>,
+  { query: { latitude: number; longitude: number; radius_km: number } }
+>;
 
 /**
  * Raw shape from the backend: the `address` field is itself an object
@@ -110,5 +91,40 @@ export function useReverseGeocode(lat?: number | null, lon?: number | null, enab
         longitude: raw.longitude,
       };
     },
+  });
+}
+
+/**
+ * GET /location/pincode/{pincode} - the backend asking India Post. Hand-written:
+ * the route declares no response model. `valid` is three-state: `true` known,
+ * `false` no such PIN, `null` India Post unreachable (treat as "carry on" -
+ * a checkout must never block on a free third-party API).
+ */
+export interface PincodeLookup {
+  pincode: string;
+  valid: boolean | null;
+  city: string | null;
+  state: string | null;
+  district: string | null;
+  localities: string[];
+}
+
+const SIX_DIGITS = /^\d{6}$/;
+
+/**
+ * Resolve a PIN to city/state as it is typed. Fires only on a complete
+ * six-digit PIN (one request per PIN, not per keystroke), never retries, and
+ * caches for the session - PIN data effectively never changes. Same rules as
+ * the web's `usePincodeLookup`.
+ */
+export function usePincodeLookup(pincode?: string) {
+  const normalized = (pincode ?? '').trim();
+  return useQuery({
+    queryKey: ['pincodeLookup', normalized],
+    enabled: SIX_DIGITS.test(normalized),
+    retry: false,
+    staleTime: Infinity,
+    queryFn: async () =>
+      await apiGet<PincodeLookup>(`/api/v1/location/pincode/${encodeURIComponent(normalized)}`),
   });
 }

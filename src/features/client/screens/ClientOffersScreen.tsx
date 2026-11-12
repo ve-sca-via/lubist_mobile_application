@@ -1,8 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { memo } from 'react';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { ClientStackParamList } from '@/navigation/navigation.types';
@@ -72,13 +73,7 @@ export function ClientOffersScreen() {
         </View>
       );
     }
-    return (
-      <View style={styles.list}>
-        {offers.map((offer) => (
-          <OfferRow key={offer.id} coupon={offer} />
-        ))}
-      </View>
-    );
+    return null;
   };
 
   return (
@@ -91,17 +86,30 @@ export function ClientOffersScreen() {
         <View style={styles.backBtn} />
       </View>
 
-      <ScrollView
+      <FlatList
+        data={isLoading || isError ? EMPTY_OFFERS : offers}
+        keyExtractor={offerKey}
+        renderItem={renderOffer}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-      >
-        {renderBody()}
-      </ScrollView>
+        ItemSeparatorComponent={OfferSeparator}
+        ListEmptyComponent={renderBody()}
+      />
     </SafeAreaView>
   );
 }
 
-function OfferRow({ coupon }: { coupon: AvailableCoupon }) {
+const EMPTY_OFFERS: AvailableCoupon[] = [];
+
+const offerKey = (coupon: AvailableCoupon) => coupon.id;
+
+const renderOffer = ({ item }: { item: AvailableCoupon }) => <OfferRow coupon={item} />;
+
+function OfferSeparator() {
+  return <View style={styles.separator} />;
+}
+
+const OfferRow = memo(function OfferRow({ coupon }: { coupon: AvailableCoupon }) {
   const subtitle = coupon.subtitle ?? coupon.title ?? 'Apply this code at checkout.';
   const validUntil = formatValidUntil(coupon.valid_until);
   const minOrder =
@@ -150,7 +158,7 @@ function OfferRow({ coupon }: { coupon: AvailableCoupon }) {
       </View>
     </LinearGradient>
   );
-}
+});
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.bg, flex: 1 },
@@ -175,7 +183,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   scrollContent: { paddingBottom: 120, paddingHorizontal: 16, paddingTop: 16 },
-  list: { gap: 14 },
+  separator: { height: 14 },
   card: {
     borderColor: colors.offerBorder,
     borderRadius: 16,

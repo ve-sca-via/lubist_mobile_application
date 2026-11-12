@@ -1,10 +1,14 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ActivityIndicator,
+  Alert,
+  FlatList,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,8 +19,19 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { ClientStackParamList } from '@/navigation/navigation.types';
-import { useSalonServices, type SalonService } from '@/services/api/hooks/useSalonsAPI';
-import { useCart, useAddToCart, useRemoveCartItem } from '@/services/api/hooks/useBookingAPI';
+import {
+  isSalonBookable,
+  SALON_NOT_BOOKABLE_MESSAGE,
+  useSalonDetail,
+  useSalonServices,
+  type SalonService,
+} from '@/services/api/hooks/useSalonsAPI';
+import {
+  useCart,
+  useAddToCart,
+  useRemoveCartItem,
+  type CartItem,
+} from '@/services/api/hooks/useBookingAPI';
 import { resolveImageUrl } from '@/services/api/imageUrl';
 
 const colors = {
@@ -58,6 +73,15 @@ interface Category {
   icon_url?: string | null;
 }
 
+interface ServiceGroup {
+  id: string;
+  name: string;
+  items: SalonService[];
+}
+
+/** An add/remove request in flight for one service. */
+type PendingOp = 'add' | 'remove';
+
 export function SalonServicesScreen() {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<Route>();
@@ -68,9 +92,22 @@ export function SalonServicesScreen() {
   const [openSubs, setOpenSubs] = useState<Record<string, boolean>>({});
 
   const servicesQuery = useSalonServices(salonId);
+  // Usually already cached by the salon details screen, so no extra request.
+  const salonQuery = useSalonDetail(salonId);
+  const bookable = isSalonBookable(salonQuery.data?.salon);
+  const queryClient = useQueryClient();
   const cart = useCart();
-  const { mutate: addToCart, isPending: isAdding } = useAddToCart();
-  const { mutate: removeItem, isPending: isRemoving } = useRemoveCartItem();
+  // mutateAsync (stable) rather than mutate + per-call callbacks: TanStack only
+  // fires mutate()'s callbacks for the LATEST call, so with several services
+  // tapped quickly an earlier failure would lose its alert.
+  const { mutateAsync: addToCart } = useAddToCart();
+  const { mutateAsync: removeItem } = useRemoveCartItem();
+  // Per-service in-flight requests. Only the tapped service's button is
+  // disabled (it used to be every button while any request was pending, which
+  // felt like lag when adding several services quickly). The pending op also
+  // drives the row's ADD/ADDED state, so a cart refetch triggered by another
+  // service's request settling can't briefly flip this one back.
+  const [pending, setPending] = useState<Record<string, PendingOp>>({});
 
   const services = servicesQuery.data?.services ?? [];
 
@@ -88,7 +125,7 @@ export function SalonServicesScreen() {
   const activeCat = selectedCat ?? categories[0]?.id ?? null;
 
   // Services in the active category, filtered by search, grouped by subcategory.
-  const groups = useMemo(() => {
+  const groups = useMemo<ServiceGroup[]>(() => {
     const q = search.trim().toLowerCase();
     const inCat = services.filter((s) => {
       const catId = s.taxonomy?.category?.id ?? UNCATEGORIZED;
@@ -96,7 +133,7 @@ export function SalonServicesScreen() {
       if (q && !s.name.toLowerCase().includes(q)) return false;
       return true;
     });
-    const map = new Map<string, { id: string; name: string; items: SalonService[] }>();
+    const map = new Map<string, ServiceGroup>();
     for (const s of inCat) {
       const sub = s.taxonomy?.subcategory;
       const id = sub?.id ?? '__general__';
@@ -106,25 +143,81 @@ export function SalonServicesScreen() {
     return Array.from(map.values());
   }, [services, activeCat, search]);
 
-  const cartItems = cart.data?.items ?? [];
+  const cartItems = cart.data?.items;
   const itemCount = cart.data?.item_count ?? 0;
   const totalAmount = cart.data?.total_amount ?? 0;
-  const busy = isAdding || isRemoving;
-  const cartItemFor = (serviceId: string) => cartItems.find((i) => i.service_id === serviceId);
+  // service_id -> cart line, so each row's lookup is O(1) instead of a scan.
+  const cartByService = useMemo(() => {
+    const map = new Map<string, CartItem>();
+    for (const item of cartItems ?? []) map.set(item.service_id, item);
+    return map;
+  }, [cartItems]);
 
-  const toggleService = (svc: SalonService) => {
-    const existing = cartItemFor(svc.id);
-    if (existing) removeItem(existing.id);
-    else {
+  // toggleService reads the latest cart/bookable through a ref so it can stay
+  // referentially stable - otherwise every cart change would re-render every
+  // (memoized) service row.
+  const latest = useRef({ cartByService, bookable });
+  latest.current = { cartByService, bookable };
+
+  const settle = useCallback((serviceId: string) => {
+    setPending((prev) => {
+      const next = { ...prev };
+      delete next[serviceId];
+      return next;
+    });
+  }, []);
+
+  const toggleService = useCallback(
+    (svc: SalonService) => {
+      const existing = latest.current.cartByService.get(svc.id);
+      if (existing) {
+        setPending((prev) => ({ ...prev, [svc.id]: 'remove' }));
+        removeItem(existing.id)
+          .catch((err: any) =>
+            Alert.alert("Couldn't remove service", err?.message || 'Please try again.'),
+          )
+          .finally(() => settle(svc.id));
+        return;
+      }
+      if (!latest.current.bookable) {
+        Alert.alert('Bookings unavailable', SALON_NOT_BOOKABLE_MESSAGE);
+        return;
+      }
       const unitPrice =
-        svc.discounted_price != null && svc.discounted_price < svc.price
-          ? svc.discounted_price
-          : svc.price;
-      addToCart({ service_id: svc.id, salon_id: salonId, quantity: 1, unit_price: unitPrice });
-    }
-  };
+        svc.discounted_price != null && svc.discounted_price < svc.price ? svc.discounted_price : svc.price;
+      setPending((prev) => ({ ...prev, [svc.id]: 'add' }));
+      addToCart({ service_id: svc.id, salon_id: salonId, quantity: 1, unit_price: unitPrice })
+        // The optimistic "ADDED" is rolled back on failure; say why instead of
+        // letting the button silently flip back (looked like a glitch).
+        .catch((err: any) => {
+          Alert.alert("Couldn't add service", err?.message || 'Please try again.');
+          // The salon may have stopped taking bookings since this screen loaded.
+          void queryClient.invalidateQueries({ queryKey: ['salonDetail', salonId] });
+        })
+        .finally(() => settle(svc.id));
+    },
+    [addToCart, removeItem, settle, queryClient, salonId],
+  );
 
-  const toggleSub = (id: string) => setOpenSubs((prev) => ({ ...prev, [id]: !prev[id] }));
+  const toggleSub = useCallback(
+    (id: string) => setOpenSubs((prev) => ({ ...prev, [id]: !prev[id] })),
+    [],
+  );
+
+  const renderGroup = useCallback(
+    ({ item }: { item: ServiceGroup }) => (
+      <ServiceGroupCard
+        bookable={bookable}
+        cartByService={cartByService}
+        group={item}
+        isOpen={!!openSubs[item.id]}
+        onToggleService={toggleService}
+        onToggleSub={toggleSub}
+        pending={pending}
+      />
+    ),
+    [bookable, cartByService, openSubs, toggleService, toggleSub, pending],
+  );
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
@@ -158,6 +251,14 @@ export function SalonServicesScreen() {
         </View>
       ) : (
         <>
+          {!bookable ? (
+            <View style={styles.unavailableBanner}>
+              <Ionicons color="#92400E" name="time-outline" size={18} />
+              <Text style={styles.unavailableText}>
+                {SALON_NOT_BOOKABLE_MESSAGE} You can still browse services and prices.
+              </Text>
+            </View>
+          ) : null}
           <View style={styles.filterSection}>
             <View style={styles.searchInput}>
               <Ionicons color={colors.serviceNote} name="search-outline" size={18} />
@@ -201,81 +302,24 @@ export function SalonServicesScreen() {
             </ScrollView>
           </View>
 
-          <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-            <View style={styles.contentArea}>
-              {groups.length === 0 ? (
+          {/* Virtualized by subcategory card; rows inside are memoized. */}
+          <FlatList
+            data={groups}
+            keyExtractor={groupKey}
+            renderItem={renderGroup}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            initialNumToRender={8}
+            maxToRenderPerBatch={6}
+            windowSize={9}
+            removeClippedSubviews={Platform.OS === 'android'}
+            ListEmptyComponent={
+              <View style={styles.contentArea}>
                 <Text style={styles.emptyText}>No services match your search.</Text>
-              ) : (
-                groups.map((group) => {
-                  const isOpen = !!openSubs[group.id];
-                  return (
-                    <View key={group.id} style={styles.accordion}>
-                      <Pressable onPress={() => toggleSub(group.id)} style={styles.accordionHeader}>
-                        <Text style={styles.accordionTitle}>
-                          {group.name} ({group.items.length})
-                        </Text>
-                        <Ionicons
-                          color={colors.accordionTitle}
-                          name={isOpen ? 'chevron-up' : 'chevron-down'}
-                          size={20}
-                        />
-                      </Pressable>
-
-                      {isOpen ? (
-                        <View style={styles.serviceList}>
-                          {group.items.map((svc, index) => {
-                            const inCart = !!cartItemFor(svc.id);
-                            const hasDiscount =
-                              svc.discounted_price != null && svc.discounted_price < svc.price;
-                            return (
-                              <View key={svc.id}>
-                                {index > 0 ? <View style={styles.divider} /> : null}
-                                <View style={styles.serviceItem}>
-                                  <View style={styles.serviceInfo}>
-                                    <View style={styles.serviceAccent} />
-                                    <Text style={styles.serviceTitle}>{svc.name}</Text>
-                                    {svc.description ? (
-                                      <Text numberOfLines={2} style={styles.serviceNote}>
-                                        {svc.description}
-                                      </Text>
-                                    ) : null}
-                                    <Text style={styles.serviceMeta}>{svc.duration_minutes} min</Text>
-                                    <View style={styles.priceRow}>
-                                      {hasDiscount ? (
-                                        <Text style={styles.strike}>{priceText(svc.price)}</Text>
-                                      ) : null}
-                                      <Text style={styles.servicePrice}>
-                                        {priceText(hasDiscount ? (svc.discounted_price as number) : svc.price)}
-                                      </Text>
-                                    </View>
-                                  </View>
-
-                                  <Pressable
-                                    disabled={busy}
-                                    onPress={() => toggleService(svc)}
-                                    style={[styles.addButton, inCart && styles.addButtonActive]}
-                                  >
-                                    <Ionicons
-                                      color={inCart ? colors.white : colors.gold}
-                                      name={inCart ? 'checkmark' : 'add'}
-                                      size={14}
-                                    />
-                                    <Text style={[styles.addButtonText, inCart && styles.addButtonTextActive]}>
-                                      {inCart ? 'ADDED' : 'ADD'}
-                                    </Text>
-                                  </Pressable>
-                                </View>
-                              </View>
-                            );
-                          })}
-                        </View>
-                      ) : null}
-                    </View>
-                  );
-                })
-              )}
-            </View>
-          </ScrollView>
+              </View>
+            }
+            ListFooterComponent={groups.length > 0 ? <View style={styles.contentFooter} /> : null}
+          />
         </>
       )}
 
@@ -296,6 +340,132 @@ export function SalonServicesScreen() {
     </SafeAreaView>
   );
 }
+
+const groupKey = (group: ServiceGroup) => group.id;
+
+/**
+ * One subcategory accordion card. Rows are only rendered while it's open, and
+ * each row is memoized on primitive props, so a cart change re-renders just
+ * the rows whose state changed.
+ */
+const ServiceGroupCard = memo(function ServiceGroupCard({
+  group,
+  isOpen,
+  bookable,
+  cartByService,
+  pending,
+  onToggleSub,
+  onToggleService,
+}: {
+  group: ServiceGroup;
+  isOpen: boolean;
+  bookable: boolean;
+  cartByService: Map<string, CartItem>;
+  pending: Record<string, PendingOp>;
+  onToggleSub: (id: string) => void;
+  onToggleService: (svc: SalonService) => void;
+}) {
+  return (
+    // Wrapper reproduces the old content area: background, side padding and
+    // the 16px top padding / gap between cards.
+    <View style={styles.groupCell}>
+      <View style={styles.accordion}>
+        <Pressable onPress={() => onToggleSub(group.id)} style={styles.accordionHeader}>
+          <Text style={styles.accordionTitle}>
+            {group.name} ({group.items.length})
+          </Text>
+          <Ionicons
+            color={colors.accordionTitle}
+            name={isOpen ? 'chevron-up' : 'chevron-down'}
+            size={20}
+          />
+        </Pressable>
+
+        {isOpen ? (
+          <View style={styles.serviceList}>
+            {group.items.map((svc, index) => {
+              const op = pending[svc.id];
+              // While a request is in flight the row shows its optimistic result.
+              const inCart = op === 'add' ? true : op === 'remove' ? false : cartByService.has(svc.id);
+              return (
+                <ServiceRow
+                  key={svc.id}
+                  bookable={bookable}
+                  busy={op != null}
+                  inCart={inCart}
+                  onToggle={onToggleService}
+                  showDivider={index > 0}
+                  svc={svc}
+                />
+              );
+            })}
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+});
+
+const ServiceRow = memo(function ServiceRow({
+  svc,
+  inCart,
+  busy,
+  bookable,
+  showDivider,
+  onToggle,
+}: {
+  svc: SalonService;
+  inCart: boolean;
+  busy: boolean;
+  bookable: boolean;
+  showDivider: boolean;
+  onToggle: (svc: SalonService) => void;
+}) {
+  const hasDiscount = svc.discounted_price != null && svc.discounted_price < svc.price;
+  return (
+    <View>
+      {showDivider ? <View style={styles.divider} /> : null}
+      <View style={styles.serviceItem}>
+        <View style={styles.serviceInfo}>
+          <View style={styles.serviceAccent} />
+          <Text style={styles.serviceTitle}>{svc.name}</Text>
+          {svc.description ? (
+            <Text numberOfLines={2} style={styles.serviceNote}>
+              {svc.description}
+            </Text>
+          ) : null}
+          <Text style={styles.serviceMeta}>{svc.duration_minutes} min</Text>
+          <View style={styles.priceRow}>
+            {hasDiscount ? <Text style={styles.strike}>{priceText(svc.price)}</Text> : null}
+            <Text style={styles.servicePrice}>
+              {priceText(hasDiscount ? (svc.discounted_price as number) : svc.price)}
+            </Text>
+          </View>
+        </View>
+
+        <Pressable
+          disabled={busy}
+          onPress={() => onToggle(svc)}
+          style={[
+            styles.addButton,
+            inCart && styles.addButtonActive,
+            !bookable && !inCart && styles.addButtonDisabled,
+          ]}
+          accessibilityState={{ disabled: !bookable && !inCart }}
+        >
+          <Ionicons
+            color={inCart ? colors.white : colors.gold}
+            name={inCart ? 'checkmark' : 'add'}
+            size={14}
+          />
+          <Text style={[styles.addButtonText, inCart && styles.addButtonTextActive]}>
+            {inCart ? 'ADDED' : 'ADD'}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+});
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.bg, flex: 1 },
@@ -337,6 +507,9 @@ const styles = StyleSheet.create({
   categoryUnderline: { backgroundColor: colors.underline, borderRadius: 2, bottom: 0, height: 3, position: 'absolute', width: '70%' },
   scrollContent: { paddingBottom: 140 },
   contentArea: { backgroundColor: colors.contentBg, gap: 16, paddingBottom: 48, paddingHorizontal: 16, paddingTop: 16 },
+  // Per-card slice of contentArea (FlatList cells): top padding doubles as the gap.
+  groupCell: { backgroundColor: colors.contentBg, paddingHorizontal: 16, paddingTop: 16 },
+  contentFooter: { backgroundColor: colors.contentBg, height: 48 },
   emptyText: { color: colors.serviceNote, fontFamily: 'Inter_400Regular', fontSize: 14, paddingVertical: 32, textAlign: 'center' },
   accordion: {
     backgroundColor: colors.white,
@@ -373,6 +546,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   addButtonActive: { backgroundColor: colors.gold, borderColor: colors.gold },
+  addButtonDisabled: { opacity: 0.4 },
+  unavailableBanner: {
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  unavailableText: { color: '#92400E', flex: 1, fontFamily: 'Inter_500Medium', fontSize: 13 },
   addButtonText: { color: colors.gold, fontFamily: 'Montserrat_700Bold', fontSize: 13 },
   addButtonTextActive: { color: colors.white },
   divider: { backgroundColor: colors.divider, height: 1 },

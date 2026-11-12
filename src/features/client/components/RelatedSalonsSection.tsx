@@ -1,5 +1,6 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
+import { memo } from 'react';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -32,7 +33,9 @@ function salonLocation(s: Salon) {
  * a card pushes a fresh SalonDetails so the back button returns to the current
  * salon.
  */
-export function RelatedSalonsSection({ salonId }: { salonId?: string }) {
+// Memoized: it only depends on the id, so the parent detail screen's own
+// re-renders (favourite toggles, query updates) don't re-render the strip.
+export const RelatedSalonsSection = memo(function RelatedSalonsSection({ salonId }: { salonId?: string }) {
   const navigation = useNavigation<Navigation>();
   const { data, isLoading } = useRelatedSalons(salonId);
   const salons = data?.salons ?? [];
@@ -91,7 +94,7 @@ export function RelatedSalonsSection({ salonId }: { salonId?: string }) {
       </ScrollView>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   section: {
