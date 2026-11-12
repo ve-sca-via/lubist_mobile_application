@@ -85,36 +85,30 @@ for `1.0.0` will not reach a `1.0.1` build.
    `customer_app_android_min_version` in `system_config` **after** the new build is live —
    see [CLIENT_APPS_AND_VERSIONING.md](../../backend/docs/CLIENT_APPS_AND_VERSIONING.md).
 
-## One-time: shipping the vendor-module removal
+## Vendor accounts: the Lubist Partner interim redirect
 
-The released build (`main` / `production`, version code 7) **still contains the vendor
-dashboard** — live vendors log in here today. The removal is on
-`chore/remove-vendor-module`, and `feat/api-contract-versioning` is built on top of it.
-Once it ships, a vendor who opens the customer app is signed out and shown
-*"Use the Lubist Partner app"* with a **GET LUBIST PARTNER** button that opens
-`play.google.com/store/apps/details?id=com.lubist.partner`.
+The customer app has no vendor dashboard. A vendor who signs in here (or gets the
+backend's 403 `USE_PARTNER_APP`) is signed out and shown the "wrong app" screen
+(`shared/components/AppGate.tsx`, copy and link in `src/app/config/clientApp.ts`).
 
-**So the order is fixed — the Partner app must be live on Play first:**
+Lubist Partner (`com.lubist.partner`) is **not on Google Play yet**, so
+`PARTNER_APP_NOT_PUBLISHED = true` in `clientApp.ts` makes that screen say the app is
+coming soon and its **OPEN VENDOR LOGIN** button open `<webBaseUrl>/login/vendor`
+instead of the Play listing (which would 404).
 
-1. Partner app tested on a real device with a real vendor login.
-2. Partner app first-build setup done (`lubist_vendor_application/README.md`, *Before the
-   first build*): `eas init`, its own icon/splash, its own keystore.
-3. New Play Console app for `com.lubist.partner`, published to **Production**. On a
-   personal developer account that means the 12-testers / 14-days closed test first —
-   check the account type, it may not apply. Until it's public, the button above leads
-   to a "not found" page and vendors are locked out of both apps.
-4. Tell vendors (WhatsApp / email) to install Lubist Partner.
-5. Merge the branch to `main` and release the customer app. The branch adds no native
-   packages (it only drops `@react-native-community/datetimepicker`, which existing
-   installs can keep unused), so **`npm run ota` is enough** and reaches every install on
-   next launch. A new store build works too, if one is going out anyway.
-6. Then the backend side, in the order of the rollout runbook in
+**Once the Partner app is public on Play Production:**
+
+1. Set `PARTNER_APP_NOT_PUBLISHED = false` and `npm run ota` - the button becomes
+   **GET LUBIST PARTNER** and opens the Play listing. No new build needed.
+2. Set the Partner app's store link in the admin panel and tell vendors
+   (WhatsApp / email) to install it.
+3. Then the backend side, in the order of the rollout runbook in
    [CLIENT_APPS_AND_VERSIONING.md](../../backend/docs/CLIENT_APPS_AND_VERSIONING.md)
    (section 3, steps 4-6): minimum version, then `enforce_partner_app_for_vendors`, then
    strict mode. Only **strict mode** (`require_client_app_header_for_vendors`) stops a
-   vendor on an old build that never received the update — old builds send no
+   vendor on an old build that never received the OTA - old builds send no
    `X-Client-App` header, so the plain enforce flag can't tell them apart. Never before
-   step 3.
+   the Partner app is public.
 
 ## Play Console facts that bite
 

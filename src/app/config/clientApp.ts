@@ -1,6 +1,8 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
+import { env } from './env';
+
 /**
  * How this build identifies itself to the backend. Sent on EVERY request as
  *   X-Client-App / X-App-Version / X-App-Platform
@@ -56,17 +58,29 @@ export const OWN_STORE_FALLBACK_URL: string | null =
  */
 export const WRONG_APP_ERROR_CODE = 'USE_PARTNER_APP';
 
+/**
+ * TEMPORARY (2026-11-13): Lubist Partner is not on Google Play yet, so its
+ * listing 404s. Until it is public, vendors are sent to the website's vendor
+ * login instead. Once the listing is live, set this to false and ship by OTA
+ * (see docs/RELEASING.md).
+ */
+const PARTNER_APP_NOT_PUBLISHED = true;
+
 /** The salon partner app ("Lubist Partner"), where vendor accounts belong. */
 export const OTHER_APP = {
   name: 'Lubist Partner',
-  storeUrl: playStoreUrl('com.lubist.partner'),
+  storeUrl: PARTNER_APP_NOT_PUBLISHED
+    ? `${env.webBaseUrl}/login/vendor`
+    : playStoreUrl('com.lubist.partner'),
 };
 
 /** Copy for the "wrong app for this account" screen (shared/components/AppGate). */
 export const WRONG_APP_COPY = {
-  title: 'Use the Lubist Partner app',
-  body: 'This is a salon partner account. Please use the Lubist Partner app.',
-  button: 'GET LUBIST PARTNER',
+  title: PARTNER_APP_NOT_PUBLISHED ? 'Salon partner account' : 'Use the Lubist Partner app',
+  body: PARTNER_APP_NOT_PUBLISHED
+    ? 'This is a salon partner account. The Lubist Partner app is coming soon to Google Play - until then, manage your salon on the Lubist website.'
+    : 'This is a salon partner account. Please use the Lubist Partner app.',
+  button: PARTNER_APP_NOT_PUBLISHED ? 'OPEN VENDOR LOGIN' : 'GET LUBIST PARTNER',
   // The backend's standard USE_PARTNER_APP message. When the server sends
   // something else (e.g. its business-buyer wording) that text is shown instead.
   serverMessage: 'Salon partner accounts use the Lubist Partner app.',
