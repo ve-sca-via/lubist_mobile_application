@@ -1,9 +1,21 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
+import { memo, useCallback, useMemo, useState } from 'react';
+import {
+  RefreshControl,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { ClientStackParamList, ClientTabParamList } from '@/navigation/navigation.types';
@@ -11,6 +23,7 @@ import { useMyBookings, useCancelBooking, type Booking } from '@/services/api/ho
 import { useCreateReview } from '@/services/api/hooks/useCustomerAPI';
 import { ReviewModal } from '@/features/client/components/ReviewModal';
 import { resolveImageUrl } from '@/services/api/imageUrl';
+import { localToday } from '@/shared/utils/date';
 
 const fallbackThumb = require('@/assets/home/top-lumina.png');
 
@@ -38,9 +51,6 @@ const colors = {
 
 type Tab = 'upcoming' | 'past';
 type BookingsNavigation = BottomTabNavigationProp<ClientTabParamList>;
-
-const toYMD = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 function formatDate(ymd?: string) {
   if (!ymd) return '';
@@ -105,13 +115,24 @@ export function ClientAppointmentsScreen() {
   const [tab, setTab] = useState<Tab>('upcoming');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const { data, isLoading, isError, refetch } = useMyBookings();
+  const { data, isLoading, isError, refetch, isRefetching } = useMyBookings();
+  const queryClient = useQueryClient();
+
+  // The tab stays mounted, so focus doesn't remount it. Refetch on focus when
+  // the data is stale (> 30 s), so a booking completed elsewhere (e.g.
+  // confirmed by the payment webhook) shows up without leaving the app.
+  useFocusEffect(
+    useCallback(() => {
+      // `stale: true` makes this a no-op when data is fresh; runs only on focus.
+      void queryClient.refetchQueries({ queryKey: ['myBookings'], stale: true, type: 'active' });
+    }, [queryClient]),
+  );
   const { mutate: cancelBooking, isPending: isCancelling } = useCancelBooking();
   const { mutate: createReview, isPending: isSubmittingReview } = useCreateReview();
 
   const [reviewBooking, setReviewBooking] = useState<Booking | null>(null);
 
-  const todayYMD = toYMD(new Date());
+  const todayYMD = localToday();
   const { upcoming, past } = useMemo(() => {
     const bookings = data?.data ?? [];
     const isDone = (b: Booking) =>
@@ -126,10 +147,13 @@ export function ClientAppointmentsScreen() {
 
   const list = tab === 'upcoming' ? upcoming : past;
 
-  const openSalon = (b: Booking) =>
-    parent?.navigate('SalonDetails', {
-      salon: { id: b.salon_id, name: b.salon_name ?? 'Salon', location: '', rating: 'New' },
-    });
+  const openSalon = useCallback(
+    (b: Booking) =>
+      parent?.navigate('SalonDetails', {
+        salon: { id: b.salon_id, name: b.salon_name ?? 'Salon', location: '', rating: 'New' },
+      }),
+    [parent],
+  );
 
   const submitReview = ({ rating, comment }: { rating: number; comment: string }) => {
     if (!reviewBooking) return;
@@ -146,28 +170,48 @@ export function ClientAppointmentsScreen() {
     );
   };
 
-  const toggleExpanded = (id: string) => {
+  const toggleExpanded = useCallback((id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+  }, []);
 
-  const confirmCancel = (b: Booking) => {
-    Alert.alert('Cancel booking', `Cancel your booking ${b.booking_number}? This can't be undone.`, [
-      { text: 'Keep', style: 'cancel' },
-      {
-        text: 'Cancel booking',
-        style: 'destructive',
-        onPress: () =>
-          cancelBooking(b.id, {
-            onError: (err: any) => Alert.alert('Error', err.message || 'Could not cancel booking.'),
-          }),
-      },
-    ]);
-  };
+  const confirmCancel = useCallback(
+    (b: Booking) => {
+      Alert.alert('Cancel booking', `Cancel your booking ${b.booking_number}? This can't be undone.`, [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: 'Cancel booking',
+          style: 'destructive',
+          onPress: () =>
+            cancelBooking(b.id, {
+              onError: (err: any) => Alert.alert('Error', err.message || 'Could not cancel booking.'),
+            }),
+        },
+      ]);
+    },
+    [cancelBooking],
+  );
+
+  const canCancel = tab === 'upcoming';
+  const renderBooking = useCallback(
+    ({ item }: { item: Booking }) => (
+      <BookingCard
+        booking={item}
+        canCancel={canCancel}
+        cancelling={isCancelling}
+        isExpanded={expanded.has(item.id)}
+        onCancel={confirmCancel}
+        onOpenSalon={openSalon}
+        onReview={setReviewBooking}
+        onToggleExpanded={toggleExpanded}
+      />
+    ),
+    [canCancel, isCancelling, expanded, confirmCancel, openSalon, toggleExpanded],
+  );
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
@@ -189,198 +233,48 @@ export function ClientAppointmentsScreen() {
         ))}
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {isLoading ? (
-          <View style={styles.empty}>
-            <ActivityIndicator color={colors.gold} size="large" />
-          </View>
-        ) : isError ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptySubtitle}>Couldn't load your bookings.</Text>
-            <Pressable onPress={() => refetch()} style={styles.retryBtn}>
-              <Text style={styles.retryText}>Retry</Text>
-            </Pressable>
-          </View>
-        ) : list.length === 0 ? (
-          <View style={styles.empty}>
-            <View style={styles.emptyIcon}>
-              <Ionicons color={colors.apptIcon} name="calendar-outline" size={26} />
+      <FlatList
+        data={isLoading || isError ? EMPTY_BOOKINGS : list}
+        keyExtractor={bookingKey}
+        renderItem={renderBooking}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === 'android'}
+        ItemSeparatorComponent={BookingSeparator}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefetching && !isLoading}
+            onRefresh={() => refetch()}
+            tintColor="#F89E07"
+            colors={['#F89E07']}
+          />
+        }
+        ListEmptyComponent={
+          isLoading ? (
+            <View style={styles.empty}>
+              <ActivityIndicator color={colors.gold} size="large" />
             </View>
-            <Text style={styles.emptyTitle}>No bookings here yet</Text>
-            <Text style={styles.emptySubtitle}>Your {tab} salon visits will appear here.</Text>
-          </View>
-        ) : (
-          <View style={styles.list}>
-            {list.map((booking) => {
-              const ss = statusStyle(booking.status);
-              const logo = resolveImageUrl(booking.salon_logo_url);
-              const canCancel = tab === 'upcoming';
-              const isCompleted = booking.status?.toLowerCase() === 'completed';
-              const services = booking.services ?? [];
-              const isExpanded = expanded.has(booking.id);
-              const pay = paymentBreakdown(booking);
-              return (
-                <View key={booking.id} style={styles.card}>
-                  <View style={styles.cardTop}>
-                    <Image source={logo ? { uri: logo } : fallbackThumb} style={styles.thumb} />
-                    <View style={styles.cardInfo}>
-                      <Text numberOfLines={1} style={styles.service}>
-                        {servicesLabel(booking)}
-                      </Text>
-                      <Text style={styles.salon}>{booking.salon_name ?? 'Salon'}</Text>
-                      {booking.booking_number ? (
-                        <Text style={styles.bookingNumber}>Booking #{booking.booking_number}</Text>
-                      ) : null}
-                      <View style={styles.metaRow}>
-                        <Ionicons color={colors.gold} name="time-outline" size={13} />
-                        <Text style={styles.metaText}>
-                          {formatDate(booking.booking_date)}
-                          {timeSlotsLabel(booking) ? `, ${timeSlotsLabel(booking)}` : ''}
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={[styles.statusPill, ss.pill]}>
-                      <Text style={[styles.statusText, ss.text]}>{booking.status}</Text>
-                    </View>
-                  </View>
-
-                  {services.length > 0 ? (
-                    <Pressable onPress={() => toggleExpanded(booking.id)} style={styles.detailsToggle}>
-                      <Text style={styles.detailsToggleText}>
-                        {isExpanded ? 'Hide details' : `Services Booked (${services.length})`}
-                      </Text>
-                      <Ionicons
-                        color={colors.gold}
-                        name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                        size={16}
-                      />
-                    </Pressable>
-                  ) : null}
-
-                  {isExpanded ? (
-                    <View style={styles.serviceList}>
-                      {services.map((service: any, idx: number) => {
-                        const name = service.service_name ?? service.name ?? 'Service';
-                        const quantity = service.quantity || 1;
-                        const unitPrice = Number(service.unit_price ?? service.price ?? 0);
-                        const originalPrice =
-                          service.original_price != null ? Number(service.original_price) : null;
-                        return (
-                          <View key={idx} style={styles.serviceRow}>
-                            <View style={styles.serviceInfo}>
-                              <Text style={styles.serviceName}>{name}</Text>
-                              {quantity > 1 ? (
-                                <Text style={styles.serviceMeta}>Quantity: {quantity}</Text>
-                              ) : null}
-                              {service.duration_minutes ? (
-                                <Text style={styles.serviceMeta}>{service.duration_minutes} mins</Text>
-                              ) : null}
-                            </View>
-                            <View style={styles.serviceAmount}>
-                              <Text style={styles.servicePrice}>{priceText(unitPrice * quantity)}</Text>
-                              {originalPrice && originalPrice > unitPrice ? (
-                                <Text style={styles.serviceStrike}>{priceText(originalPrice * quantity)}</Text>
-                              ) : null}
-                            </View>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  ) : null}
-
-                  <View style={styles.paymentCard}>
-                    {pay.hasCoupon ? (
-                      <View style={styles.couponBadge}>
-                        <Ionicons color={colors.green} name="pricetag" size={12} />
-                        <Text style={styles.couponBadgeText}>
-                          {booking.coupon_code} applied — saved {priceText(pay.couponSavings)}
-                        </Text>
-                      </View>
-                    ) : null}
-                    <View style={styles.priceRow}>
-                      <Text style={styles.priceLabel}>Original Service Total</Text>
-                      <Text style={styles.priceValue}>{priceText(pay.originalServicesTotal)}</Text>
-                    </View>
-                    {pay.saleDiscount > 0 ? (
-                      <View style={styles.priceRow}>
-                        <Text style={styles.priceLabel}>Sale Discount</Text>
-                        <Text style={styles.discountValue}>-{priceText(pay.saleDiscount)}</Text>
-                      </View>
-                    ) : null}
-                    {pay.couponServiceDiscount > 0 ? (
-                      <View style={styles.priceRow}>
-                        <Text style={styles.priceLabel}>
-                          Coupon{booking.coupon_code ? ` (${booking.coupon_code})` : ''}
-                        </Text>
-                        <Text style={styles.discountValue}>-{priceText(pay.couponServiceDiscount)}</Text>
-                      </View>
-                    ) : null}
-                    <View style={styles.priceRow}>
-                      <Text style={styles.priceLabel}>Service Total (Pay at Salon)</Text>
-                      <Text style={styles.priceValue}>{priceText(pay.servicePrice)}</Text>
-                    </View>
-                    {pay.couponFeeDiscount > 0 ? (
-                      <>
-                        <View style={styles.priceRow}>
-                          <Text style={styles.priceLabel}>Booking Fee</Text>
-                          <Text style={styles.priceValueStrike}>{priceText(pay.convenienceFeeBeforeDiscount)}</Text>
-                        </View>
-                        <View style={styles.priceRow}>
-                          <Text style={styles.priceLabel}>
-                            Fee Discount{booking.coupon_code ? ` (${booking.coupon_code})` : ''}
-                          </Text>
-                          <Text style={styles.discountValue}>-{priceText(pay.couponFeeDiscount)}</Text>
-                        </View>
-                      </>
-                    ) : null}
-                    <View style={styles.paymentDivider} />
-                    <View style={styles.priceRow}>
-                      <Text style={styles.payLabel}>Paid Online</Text>
-                      <Text style={styles.payAmount}>{priceText(pay.convenienceFee)}</Text>
-                    </View>
-                    {pay.servicePrice > 0 ? (
-                      <View style={styles.priceRow}>
-                        <Text style={styles.priceLabel}>Pay at Salon</Text>
-                        <Text style={styles.payAtSalonValue}>{priceText(pay.servicePrice)}</Text>
-                      </View>
-                    ) : null}
-                  </View>
-
-                  <View style={styles.divider} />
-
-                  <View style={styles.actions}>
-                    {canCancel ? (
-                      <Pressable
-                        disabled={isCancelling}
-                        onPress={() => confirmCancel(booking)}
-                        style={[styles.actionBtn, styles.actionOutline]}
-                      >
-                        <Text style={styles.actionOutlineText}>Cancel</Text>
-                      </Pressable>
-                    ) : isCompleted ? (
-                      <Pressable
-                        onPress={() => setReviewBooking(booking)}
-                        style={[styles.actionBtn, styles.actionOutline]}
-                      >
-                        <Ionicons color={colors.text} name="star-outline" size={15} />
-                        <Text style={styles.actionOutlineText}>Write Review</Text>
-                      </Pressable>
-                    ) : null}
-                    <Pressable
-                      onPress={() => openSalon(booking)}
-                      style={[styles.actionBtn, styles.actionPrimary]}
-                    >
-                      <Text style={styles.actionPrimaryText}>
-                        {canCancel ? 'View Salon' : 'Book Again'}
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
-      </ScrollView>
+          ) : isError ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptySubtitle}>Couldn't load your bookings.</Text>
+              <Pressable onPress={() => refetch()} style={styles.retryBtn}>
+                <Text style={styles.retryText}>Retry</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <View style={styles.emptyIcon}>
+                <Ionicons color={colors.apptIcon} name="calendar-outline" size={26} />
+              </View>
+              <Text style={styles.emptyTitle}>No bookings here yet</Text>
+              <Text style={styles.emptySubtitle}>Your {tab} salon visits will appear here.</Text>
+            </View>
+          )
+        }
+      />
 
       <ReviewModal
         visible={reviewBooking != null}
@@ -392,6 +286,202 @@ export function ClientAppointmentsScreen() {
     </SafeAreaView>
   );
 }
+
+const EMPTY_BOOKINGS: Booking[] = [];
+
+const bookingKey = (booking: Booking) => booking.id;
+
+function BookingSeparator() {
+  return <View style={styles.separator} />;
+}
+
+/**
+ * One booking card. Memoized: expanding one card, switching tabs or a cancel
+ * in flight re-renders only the cards whose props changed.
+ */
+const BookingCard = memo(function BookingCard({
+  booking,
+  canCancel,
+  cancelling,
+  isExpanded,
+  onToggleExpanded,
+  onCancel,
+  onReview,
+  onOpenSalon,
+}: {
+  booking: Booking;
+  canCancel: boolean;
+  cancelling: boolean;
+  isExpanded: boolean;
+  onToggleExpanded: (id: string) => void;
+  onCancel: (booking: Booking) => void;
+  onReview: (booking: Booking) => void;
+  onOpenSalon: (booking: Booking) => void;
+}) {
+  const ss = statusStyle(booking.status);
+  const logo = resolveImageUrl(booking.salon_logo_url);
+  const isCompleted = booking.status?.toLowerCase() === 'completed';
+  const services = booking.services ?? [];
+  const pay = paymentBreakdown(booking);
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardTop}>
+        <Image source={logo ? { uri: logo } : fallbackThumb} style={styles.thumb} />
+        <View style={styles.cardInfo}>
+          <Text numberOfLines={1} style={styles.service}>
+            {servicesLabel(booking)}
+          </Text>
+          <Text style={styles.salon}>{booking.salon_name ?? 'Salon'}</Text>
+          {booking.booking_number ? (
+            <Text style={styles.bookingNumber}>Booking #{booking.booking_number}</Text>
+          ) : null}
+          <View style={styles.metaRow}>
+            <Ionicons color={colors.gold} name="time-outline" size={13} />
+            <Text style={styles.metaText}>
+              {formatDate(booking.booking_date)}
+              {timeSlotsLabel(booking) ? `, ${timeSlotsLabel(booking)}` : ''}
+            </Text>
+          </View>
+        </View>
+        <View style={[styles.statusPill, ss.pill]}>
+          <Text style={[styles.statusText, ss.text]}>{booking.status}</Text>
+        </View>
+      </View>
+
+      {services.length > 0 ? (
+        <Pressable onPress={() => onToggleExpanded(booking.id)} style={styles.detailsToggle}>
+          <Text style={styles.detailsToggleText}>
+            {isExpanded ? 'Hide details' : `Services Booked (${services.length})`}
+          </Text>
+          <Ionicons
+            color={colors.gold}
+            name={isExpanded ? 'chevron-up' : 'chevron-down'}
+            size={16}
+          />
+        </Pressable>
+      ) : null}
+
+      {isExpanded ? (
+        <View style={styles.serviceList}>
+          {services.map((service: any, idx: number) => {
+            const name = service.service_name ?? service.name ?? 'Service';
+            const quantity = service.quantity || 1;
+            const unitPrice = Number(service.unit_price ?? service.price ?? 0);
+            const originalPrice =
+              service.original_price != null ? Number(service.original_price) : null;
+            return (
+              <View key={idx} style={styles.serviceRow}>
+                <View style={styles.serviceInfo}>
+                  <Text style={styles.serviceName}>{name}</Text>
+                  {quantity > 1 ? (
+                    <Text style={styles.serviceMeta}>Quantity: {quantity}</Text>
+                  ) : null}
+                  {service.duration_minutes ? (
+                    <Text style={styles.serviceMeta}>{service.duration_minutes} mins</Text>
+                  ) : null}
+                </View>
+                <View style={styles.serviceAmount}>
+                  <Text style={styles.servicePrice}>{priceText(unitPrice * quantity)}</Text>
+                  {originalPrice && originalPrice > unitPrice ? (
+                    <Text style={styles.serviceStrike}>{priceText(originalPrice * quantity)}</Text>
+                  ) : null}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+
+      <View style={styles.paymentCard}>
+        {pay.hasCoupon ? (
+          <View style={styles.couponBadge}>
+            <Ionicons color={colors.green} name="pricetag" size={12} />
+            <Text style={styles.couponBadgeText}>
+              {booking.coupon_code} applied — saved {priceText(pay.couponSavings)}
+            </Text>
+          </View>
+        ) : null}
+        <View style={styles.priceRow}>
+          <Text style={styles.priceLabel}>Original Service Total</Text>
+          <Text style={styles.priceValue}>{priceText(pay.originalServicesTotal)}</Text>
+        </View>
+        {pay.saleDiscount > 0 ? (
+          <View style={styles.priceRow}>
+            <Text style={styles.priceLabel}>Sale Discount</Text>
+            <Text style={styles.discountValue}>-{priceText(pay.saleDiscount)}</Text>
+          </View>
+        ) : null}
+        {pay.couponServiceDiscount > 0 ? (
+          <View style={styles.priceRow}>
+            <Text style={styles.priceLabel}>
+              Coupon{booking.coupon_code ? ` (${booking.coupon_code})` : ''}
+            </Text>
+            <Text style={styles.discountValue}>-{priceText(pay.couponServiceDiscount)}</Text>
+          </View>
+        ) : null}
+        <View style={styles.priceRow}>
+          <Text style={styles.priceLabel}>Service Total (Pay at Salon)</Text>
+          <Text style={styles.priceValue}>{priceText(pay.servicePrice)}</Text>
+        </View>
+        {pay.couponFeeDiscount > 0 ? (
+          <>
+            <View style={styles.priceRow}>
+              <Text style={styles.priceLabel}>Booking Fee</Text>
+              <Text style={styles.priceValueStrike}>{priceText(pay.convenienceFeeBeforeDiscount)}</Text>
+            </View>
+            <View style={styles.priceRow}>
+              <Text style={styles.priceLabel}>
+                Fee Discount{booking.coupon_code ? ` (${booking.coupon_code})` : ''}
+              </Text>
+              <Text style={styles.discountValue}>-{priceText(pay.couponFeeDiscount)}</Text>
+            </View>
+          </>
+        ) : null}
+        <View style={styles.paymentDivider} />
+        <View style={styles.priceRow}>
+          <Text style={styles.payLabel}>Paid Online</Text>
+          <Text style={styles.payAmount}>{priceText(pay.convenienceFee)}</Text>
+        </View>
+        {pay.servicePrice > 0 ? (
+          <View style={styles.priceRow}>
+            <Text style={styles.priceLabel}>Pay at Salon</Text>
+            <Text style={styles.payAtSalonValue}>{priceText(pay.servicePrice)}</Text>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.divider} />
+
+      <View style={styles.actions}>
+        {canCancel ? (
+          <Pressable
+            disabled={cancelling}
+            onPress={() => onCancel(booking)}
+            style={[styles.actionBtn, styles.actionOutline]}
+          >
+            <Text style={styles.actionOutlineText}>Cancel</Text>
+          </Pressable>
+        ) : isCompleted ? (
+          <Pressable
+            onPress={() => onReview(booking)}
+            style={[styles.actionBtn, styles.actionOutline]}
+          >
+            <Ionicons color={colors.text} name="star-outline" size={15} />
+            <Text style={styles.actionOutlineText}>Write Review</Text>
+          </Pressable>
+        ) : null}
+        <Pressable
+          onPress={() => onOpenSalon(booking)}
+          style={[styles.actionBtn, styles.actionPrimary]}
+        >
+          <Text style={styles.actionPrimaryText}>
+            {canCancel ? 'View Salon' : 'Book Again'}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+});
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.bg, flex: 1 },
@@ -412,7 +502,7 @@ const styles = StyleSheet.create({
   segmentText: { color: colors.text, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   segmentTextActive: { color: colors.white },
   scrollContent: { paddingBottom: 120, paddingHorizontal: 16, paddingTop: 4 },
-  list: { gap: 16 },
+  separator: { height: 16 },
   card: {
     backgroundColor: colors.cardCream2,
     borderColor: colors.pillBorder,

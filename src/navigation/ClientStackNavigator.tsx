@@ -15,6 +15,8 @@ import { ProfileScreen } from '@/features/client/screens/ProfileScreen';
 import { MyReviewsScreen } from '@/features/client/screens/MyReviewsScreen';
 import { ClientOffersScreen } from '@/features/client/screens/ClientOffersScreen';
 import { WebPageScreen } from '@/features/client/screens/WebPageScreen';
+import { MyOrdersScreen } from '@/features/client/screens/MyOrdersScreen';
+import { OrderDetailScreen } from '@/features/client/screens/OrderDetailScreen';
 
 import { ClientStackParamList } from './navigation.types';
 
@@ -36,6 +38,8 @@ export function ClientStackNavigator() {
       <Stack.Screen component={CartScreen} name="Cart" />
       <Stack.Screen component={ServiceCartScreen} name="ServiceCart" />
       <Stack.Screen component={MyReviewsScreen} name="MyReviews" />
+      <Stack.Screen component={MyOrdersScreen} name="MyOrders" />
+      <Stack.Screen component={OrderDetailScreen} name="OrderDetail" />
       <Stack.Screen component={ClientOffersScreen} name="Offers" />
       <Stack.Screen component={WebPageScreen} name="WebPage" />
     </Stack.Navigator>

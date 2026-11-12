@@ -1,10 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { ClientStackParamList } from '@/navigation/navigation.types';
 import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue';
+import { usePendingIds } from '@/shared/hooks/usePendingIds';
 import {
   Product,
   discountLabel,
@@ -72,10 +75,44 @@ export function ProductCatalogScreen() {
 
   const cart = useProductCart();
   const cartCount = cart.data?.item_count ?? 0;
-  const addToCart = useAddToProductCart();
+  // Stable callbacks (mutate, not the mutation object) so memoized cards don't
+  // re-render on every keystroke in the search box.
+  const { mutateAsync: addToCart } = useAddToProductCart();
+  const pending = usePendingIds();
+  const { add: markPending, remove: clearPending } = pending;
+  const addProduct = useCallback(
+    (product: Product) => {
+      markPending(product.id);
+      // Errors were silent before too (mutate with no handlers); keep it that way.
+      addToCart({ product_id: product.id })
+        .catch(() => {})
+        .finally(() => clearPending(product.id));
+    },
+    [addToCart, markPending, clearPending],
+  );
 
-  const openProduct = (product: Product) =>
-    navigation.navigate('ProductDetail', { productId: product.id, productName: product.brand ?? product.name });
+  const openProduct = useCallback(
+    (product: Product) =>
+      navigation.navigate('ProductDetail', {
+        productId: product.id,
+        productName: product.brand ?? product.name,
+      }),
+    [navigation],
+  );
+
+  const renderProduct = useCallback(
+    ({ item }: { item: Product }) => (
+      <CatalogProductCard
+        adding={pending.ids.has(item.id)}
+        onAdd={addProduct}
+        onOpen={openProduct}
+        product={item}
+      />
+    ),
+    [pending.ids, addProduct, openProduct],
+  );
+
+  const showGrid = !productsQuery.isLoading && !productsQuery.isError && products.length > 0;
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
@@ -113,77 +150,107 @@ export function ProductCatalogScreen() {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <Text style={styles.sectionTitle}>CURRENT OFFERS</Text>
-        <ScrollView
-          contentContainerStyle={styles.offersRow}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-        >
-          {offers.map((offer) => (
-            <LinearGradient
-              key={offer.id}
-              colors={[colors.card, '#FCEBDC']}
-              end={{ x: 0.2, y: 1 }}
-              start={{ x: 0, y: 0 }}
-              style={styles.offerCard}
+      {/* Up to 50 products: virtualized 3-column grid; offers + heading are the header. */}
+      <FlatList
+        data={showGrid ? products : EMPTY_PRODUCTS}
+        keyExtractor={productKey}
+        renderItem={renderProduct}
+        numColumns={3}
+        columnWrapperStyle={styles.gridRow}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={9}
+        maxToRenderPerBatch={9}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === 'android'}
+        ListHeaderComponent={
+          <>
+            <Text style={styles.sectionTitle}>CURRENT OFFERS</Text>
+            <ScrollView
+              contentContainerStyle={styles.offersRow}
+              horizontal
+              showsHorizontalScrollIndicator={false}
             >
-              <View style={styles.offerTopRow}>
-                <Ionicons color={colors.gold} name="pricetag" size={14} />
-                <Text style={styles.offerTitle}>{offer.title}</Text>
-              </View>
-              <Text style={styles.offerSubtitle}>{offer.subtitle}</Text>
-            </LinearGradient>
-          ))}
-        </ScrollView>
-
-        <Text style={[styles.sectionTitle, styles.productsHeading]}>OUR PRODUCTS</Text>
-        {productsQuery.isLoading ? (
-          <ActivityIndicator color={colors.gold} size="large" style={styles.loader} />
-        ) : productsQuery.isError ? (
-          <Text style={styles.emptyText}>Couldn’t load products. Please try again.</Text>
-        ) : products.length === 0 ? (
-          <Text style={styles.emptyText}>No products found.</Text>
-        ) : (
-          <View style={styles.grid}>
-            {products.map((product) => {
-              const original = originalPrice(product);
-              const discount = discountLabel(product);
-              const uri = productImageUri(product);
-              return (
-                <Pressable key={product.id} onPress={() => openProduct(product)} style={styles.card}>
-                  <Image source={uri ? { uri } : productFallback} style={styles.productImage} />
-                  <Text style={styles.productBrand}>{product.brand ?? product.name}</Text>
-                  <Text numberOfLines={2} style={styles.productDesc}>
-                    {product.short_description ?? product.name}
-                  </Text>
-                  {product.weight ? <Text style={styles.productSize}>{product.weight}</Text> : null}
-
-                  <View style={styles.priceRow}>
-                    {original ? (
-                      <Text style={styles.priceOriginal}>{formatPrice(original)}</Text>
-                    ) : null}
-                    <Text style={styles.priceSale}>{formatPrice(effectivePrice(product))}</Text>
-                    {discount ? <Text style={styles.priceDiscount}>{discount}</Text> : null}
+              {offers.map((offer) => (
+                <LinearGradient
+                  key={offer.id}
+                  colors={[colors.card, '#FCEBDC']}
+                  end={{ x: 0.2, y: 1 }}
+                  start={{ x: 0, y: 0 }}
+                  style={styles.offerCard}
+                >
+                  <View style={styles.offerTopRow}>
+                    <Ionicons color={colors.gold} name="pricetag" size={14} />
+                    <Text style={styles.offerTitle}>{offer.title}</Text>
                   </View>
+                  <Text style={styles.offerSubtitle}>{offer.subtitle}</Text>
+                </LinearGradient>
+              ))}
+            </ScrollView>
 
-                  <Pressable
-                    disabled={addToCart.isPending}
-                    onPress={() => addToCart.mutate({ product_id: product.id })}
-                    style={styles.addButton}
-                  >
-                    <Text style={styles.addText}>Add</Text>
-                    <Ionicons color={colors.white} name="bag-add-outline" size={11} />
-                  </Pressable>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
-      </ScrollView>
+            <Text style={[styles.sectionTitle, styles.productsHeading]}>OUR PRODUCTS</Text>
+            {showGrid ? <View style={styles.gridTop} /> : null}
+          </>
+        }
+        ListEmptyComponent={
+          productsQuery.isLoading ? (
+            <ActivityIndicator color={colors.gold} size="large" style={styles.loader} />
+          ) : productsQuery.isError ? (
+            <Text style={styles.emptyText}>Couldn’t load products. Please try again.</Text>
+          ) : (
+            <Text style={styles.emptyText}>No products found.</Text>
+          )
+        }
+      />
     </SafeAreaView>
   );
 }
+
+const EMPTY_PRODUCTS: Product[] = [];
+
+const productKey = (product: Product) => product.id;
+
+/** One grid cell; memoized so search typing / cart updates don't re-render the grid. */
+const CatalogProductCard = memo(function CatalogProductCard({
+  product,
+  adding,
+  onOpen,
+  onAdd,
+}: {
+  product: Product;
+  adding: boolean;
+  onOpen: (product: Product) => void;
+  onAdd: (product: Product) => void;
+}) {
+  const original = originalPrice(product);
+  const discount = discountLabel(product);
+  const uri = productImageUri(product);
+  return (
+    <Pressable onPress={() => onOpen(product)} style={styles.card}>
+      <Image
+        resizeMode="cover"
+        source={uri ? { uri } : productFallback}
+        style={styles.productImage}
+      />
+      <Text style={styles.productBrand}>{product.brand ?? product.name}</Text>
+      <Text numberOfLines={2} style={styles.productDesc}>
+        {product.short_description ?? product.name}
+      </Text>
+      {product.weight ? <Text style={styles.productSize}>{product.weight}</Text> : null}
+
+      <View style={styles.priceRow}>
+        {original ? <Text style={styles.priceOriginal}>{formatPrice(original)}</Text> : null}
+        <Text style={styles.priceSale}>{formatPrice(effectivePrice(product))}</Text>
+        {discount ? <Text style={styles.priceDiscount}>{discount}</Text> : null}
+      </View>
+
+      <Pressable disabled={adding} onPress={() => onAdd(product)} style={styles.addButton}>
+        <Text style={styles.addText}>Add</Text>
+        <Ionicons color={colors.white} name="bag-add-outline" size={11} />
+      </Pressable>
+    </Pressable>
+  );
+});
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -328,11 +395,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 24,
   },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  // FlatList grid: the old wrapping grid's side padding goes on each row and
+  // its top padding becomes a spacer at the end of the list header.
+  gridRow: {
     paddingHorizontal: 8,
-    paddingTop: 12,
+  },
+  gridTop: {
+    height: 12,
   },
   card: {
     borderColor: colors.border,

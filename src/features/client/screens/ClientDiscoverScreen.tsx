@@ -2,11 +2,13 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
   Image,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -155,27 +157,43 @@ export function ClientDiscoverScreen() {
   const cartCount = useProductCart().data?.item_count ?? 0;
 
   const active = isSearching ? searchSalons : nearby ? nearbySalons : publicSalons;
-  let salons = (active.data?.salons ?? []) as Salon[];
-  if (!isSearching && businessType) {
-    salons = salons.filter((s) => s.business_type === businessType);
-  }
-  salons = sortSalons(salons, activeSort);
+  const activeSalons = active.data?.salons;
+  // Memoized so typing in the search box (which re-renders the screen on every
+  // keystroke, before the debounce) doesn't re-filter / re-sort the list and
+  // hand the FlatList a new array.
+  const salons = useMemo(() => {
+    let list = (activeSalons ?? []) as Salon[];
+    if (!isSearching && businessType) {
+      list = list.filter((s) => s.business_type === businessType);
+    }
+    return sortSalons(list, activeSort);
+  }, [activeSalons, isSearching, businessType, activeSort]);
 
   const heading = isSearching
     ? 'SEARCH RESULTS'
     : (filterTitle ?? (nearby ? 'Salons Near You' : 'All Salons')).toUpperCase();
 
-  const openSalon = (s: Salon) => {
-    const route: SalonRouteData = {
-      id: s.id,
-      name: s.business_name,
-      location: salonLocation(s),
-      rating: displayRating(s.average_rating, s.total_reviews).label,
-      reviewCount: s.total_reviews ?? 0,
-      heroImage: s.logo_url ?? s.cover_images?.[0] ?? undefined,
-    };
-    parent?.navigate('SalonDetails', { salon: route });
-  };
+  const openSalon = useCallback(
+    (s: Salon) => {
+      const route: SalonRouteData = {
+        id: s.id,
+        name: s.business_name,
+        location: salonLocation(s),
+        rating: displayRating(s.average_rating, s.total_reviews).label,
+        reviewCount: s.total_reviews ?? 0,
+        heroImage: s.logo_url ?? s.cover_images?.[0] ?? undefined,
+      };
+      parent?.navigate('SalonDetails', { salon: route });
+    },
+    [parent],
+  );
+
+  const renderSalon = useCallback(
+    ({ item, index }: { item: Salon; index: number }) => (
+      <SalonRow index={index} onOpen={openSalon} salon={item} />
+    ),
+    [openSalon],
+  );
 
   const resultsLabel = active.isLoading
     ? 'Finding salons…'
@@ -196,23 +214,40 @@ export function ClientDiscoverScreen() {
         onChangeText={setQuery}
       />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.resultsHeader}>
-          <Text style={styles.resultsText}>{resultsLabel}</Text>
-          {hasFilter ? (
-            <Pressable onPress={clearFilter} style={styles.filterChip}>
-              <Text style={styles.filterChipText}>
-                {filterTitle ?? businessTypeLabel(businessType)}
-              </Text>
-              <Ionicons color={colors.gold} name="close" size={14} />
-            </Pressable>
-          ) : null}
-        </View>
+      {/* Virtualized: up to 50 salon cards, each with its own rotating coupon
+          strip timer - only the cards near the viewport are mounted. */}
+      <FlatList
+        data={active.isLoading || active.isError ? EMPTY_SALONS : salons}
+        keyExtractor={salonKey}
+        renderItem={renderSalon}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === 'android'}
+        ItemSeparatorComponent={SalonSeparator}
+        ListHeaderComponent={
+          <>
+            <View style={styles.resultsHeader}>
+              <Text style={styles.resultsText}>{resultsLabel}</Text>
+              {hasFilter ? (
+                <Pressable onPress={clearFilter} style={styles.filterChip}>
+                  <Text style={styles.filterChipText}>
+                    {filterTitle ?? businessTypeLabel(businessType)}
+                  </Text>
+                  <Ionicons color={colors.gold} name="close" size={14} />
+                </Pressable>
+              ) : null}
+            </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{heading}</Text>
-
-          {active.isLoading ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{heading}</Text>
+            </View>
+          </>
+        }
+        ListEmptyComponent={
+          active.isLoading ? (
             <View style={styles.stateBox}>
               <ActivityIndicator color={colors.gold} size="large" />
             </View>
@@ -223,7 +258,7 @@ export function ClientDiscoverScreen() {
                 <Text style={styles.retryText}>Retry</Text>
               </Pressable>
             </View>
-          ) : salons.length === 0 ? (
+          ) : (
             <View style={styles.stateBox}>
               <Ionicons color={colors.sectionHeading} name="search-outline" size={26} />
               <Text style={styles.stateText}>
@@ -236,28 +271,9 @@ export function ClientDiscoverScreen() {
                       : 'No salons available yet.'}
               </Text>
             </View>
-          ) : (
-            <View style={styles.list}>
-              {salons.map((salon, index) => {
-                const remote = resolveImageUrl(salon.logo_url ?? salon.cover_images?.[0]);
-                return (
-                  <SalonCard
-                    key={salon.id}
-                    chips={salon.business_type ? [businessTypeChipLabel(salon.business_type).toUpperCase()] : []}
-                    imageSource={remote ? { uri: remote } : fallbackImages[index % fallbackImages.length]}
-                    location={salonLocation(salon)}
-                    name={salon.business_name}
-                    maxDiscount={salon.max_discount_percentage}
-                    coupons={salon.coupons ?? []}
-                    onPress={() => openSalon(salon)}
-                    rating={displayRating(salon.average_rating, salon.total_reviews).label}
-                  />
-                );
-              })}
-            </View>
-          )}
-        </View>
-      </ScrollView>
+          )
+        }
+      />
 
       <SortSheet
         onApply={setActiveSort}
@@ -268,6 +284,41 @@ export function ClientDiscoverScreen() {
     </SafeAreaView>
   );
 }
+
+const EMPTY_SALONS: Salon[] = [];
+
+const salonKey = (salon: Salon) => salon.id;
+
+function SalonSeparator() {
+  return <View style={styles.separator} />;
+}
+
+/** One salon card; memoized so search typing / sorting doesn't re-render rows. */
+const SalonRow = memo(function SalonRow({
+  salon,
+  index,
+  onOpen,
+}: {
+  salon: Salon;
+  index: number;
+  onOpen: (salon: Salon) => void;
+}) {
+  const remote = resolveImageUrl(salon.logo_url ?? salon.cover_images?.[0]);
+  return (
+    <SalonCard
+      chips={salon.business_type ? [businessTypeChipLabel(salon.business_type).toUpperCase()] : []}
+      imageSource={remote ? { uri: remote } : fallbackImages[index % fallbackImages.length]}
+      location={salonLocation(salon)}
+      name={salon.business_name}
+      maxDiscount={salon.max_discount_percentage}
+      coupons={salon.coupons ?? NO_COUPONS}
+      onPress={() => onOpen(salon)}
+      rating={displayRating(salon.average_rating, salon.total_reviews).label}
+    />
+  );
+});
+
+const NO_COUPONS: AvailableCoupon[] = [];
 
 function SortSheet({
   onApply,
@@ -630,15 +681,17 @@ const styles = StyleSheet.create({
     top: -1,
     width: 10,
   },
+  // The list's 20px side padding lives on the content container (it used to be
+  // on resultsHeader / section) so header, cards and states all share it.
   content: {
     paddingBottom: 120,
+    paddingHorizontal: 20,
     paddingTop: 20,
   },
   resultsHeader: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
   },
   resultsText: {
     color: colors.resultsMuted,
@@ -661,9 +714,9 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_500Medium',
     fontSize: 12,
   },
+  // Heading above the cards; paddingBottom is the 16px gap to the first card.
   section: {
-    gap: 16,
-    paddingHorizontal: 20,
+    paddingBottom: 16,
     paddingTop: 15,
   },
   sectionTitle: {
@@ -672,8 +725,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 1.1,
   },
-  list: {
-    gap: 16,
+  separator: {
+    height: 16,
   },
   stateBox: {
     alignItems: 'center',

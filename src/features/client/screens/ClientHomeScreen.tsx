@@ -3,14 +3,16 @@ import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
+  FlatList,
   Image,
   Linking,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -47,7 +49,7 @@ import { displayRating } from '@/services/api/rating';
 import { salonAddress, salonLocationLabel } from '@/services/api/salonLocation';
 
 // Assets exported 1:1 from Figma ("HOmescreen").
-const hero = require('@/assets/home/hero.png');
+const hero = require('@/assets/home/hero.jpg');
 const nearbyLumiere = require('@/assets/home/nearby-lumiere.png');
 const nearbyGlow = require('@/assets/home/nearby-glow.png');
 const serviceImage = require('@/assets/home/service.png');
@@ -183,7 +185,7 @@ export function ClientHomeScreen() {
 
   // Top salons: highest-rated public salons (rating, then review count).
   // Paginated — starts with one page and fetches more as the user scrolls
-  // toward the bottom of the home page (see handleScroll below).
+  // toward the bottom of the home page (see loadMoreSalons below).
   const publicSalons = useInfinitePublicSalons({ pageSize: 10 });
   const allPublicSalons = useMemo(
     () => publicSalons.data?.pages.flatMap((page) => page.salons) ?? [],
@@ -197,19 +199,14 @@ export function ClientHomeScreen() {
     );
   }, [allPublicSalons]);
 
-  const loadMoreSalons = () => {
-    if (publicSalons.hasNextPage && !publicSalons.isFetchingNextPage) {
-      publicSalons.fetchNextPage();
+  // Top salons are the page's FlatList data, so the list is virtualized and the
+  // next page is fetched as the user nears the bottom (onEndReached).
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = publicSalons;
+  const loadMoreSalons = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
     }
-  };
-
-  const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-    const distanceToBottom = contentSize.height - (layoutMeasurement.height + contentOffset.y);
-    if (distanceToBottom < 200) {
-      loadMoreSalons();
-    }
-  };
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // "Services for you": the distinct establishment types actually present in the
   // catalogue (with a count each), so the section reflects real data instead of a
@@ -227,15 +224,28 @@ export function ClientHomeScreen() {
       .map(([type, count]) => ({ type, count, label: businessTypeLabel(type) }));
   }, [allPublicSalons]);
 
-  const openTopSalon = (s: Salon) =>
-    openSalon({
-      id: s.id,
-      name: s.business_name,
-      location: salonAddress(s),
-      rating: displayRating(s.average_rating, s.total_reviews).label,
-      reviewCount: s.total_reviews ?? 0,
-      heroImage: s.logo_url ?? s.cover_images?.[0] ?? undefined,
-    });
+  // Stable so memoized TopSalonRow rows don't re-render on every screen render.
+  const openTopSalon = useCallback(
+    (s: Salon) =>
+      parent?.navigate('SalonDetails', {
+        salon: {
+          id: s.id,
+          name: s.business_name,
+          location: salonAddress(s),
+          rating: displayRating(s.average_rating, s.total_reviews).label,
+          reviewCount: s.total_reviews ?? 0,
+          heroImage: s.logo_url ?? s.cover_images?.[0] ?? undefined,
+        },
+      }),
+    [parent],
+  );
+
+  const renderTopSalon = useCallback(
+    ({ item, index }: { item: Salon; index: number }) => (
+      <TopSalonRow index={index} onOpen={openTopSalon} salon={item} />
+    ),
+    [openTopSalon],
+  );
 
   const locationLabel = locLoading
     ? 'Detecting your location…'
@@ -266,66 +276,83 @@ export function ClientHomeScreen() {
         onPressProfile={() => parent?.navigate('Profile')}
         onPressSaved={openSaved}
       />
-      <ScrollView
+      <FlatList
+        data={topSalons}
+        keyExtractor={salonKey}
+        renderItem={renderTopSalon}
         contentContainerStyle={styles.scrollContent}
-        onScroll={handleScroll}
-        scrollEventThrottle={200}
         showsVerticalScrollIndicator={false}
-      >
-        <EmailVerificationBanner />
-        <HeroCarousel onPressBanner={handleBannerPress} />
-        <SearchBar onSubmit={openDiscover} />
-        <AppointmentsCard onPress={() => navigation.navigate('Bookings')} />
-
-        {offers.length > 0 ? (
+        onEndReached={loadMoreSalons}
+        onEndReachedThreshold={0.5}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === 'android'}
+        ItemSeparatorComponent={TopSalonSeparator}
+        ListHeaderComponent={
           <>
-            <SectionTitle text="CURRENT OFFERS" />
-            <ScrollView
-              contentContainerStyle={styles.offersRow}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-            >
-              {offers.map((offer) => (
-                <OfferCard key={offer.id} coupon={offer} />
-              ))}
-            </ScrollView>
-            <PaginationDots activeIndex={0} count={offers.length} />
+            <EmailVerificationBanner />
+            <HeroCarousel onPressBanner={handleBannerPress} />
+            <SearchBar onSubmit={openDiscover} />
+            <AppointmentsCard onPress={() => navigation.navigate('Bookings')} />
+
+            {offers.length > 0 ? (
+              <>
+                <SectionTitle text="CURRENT OFFERS" />
+                <ScrollView
+                  contentContainerStyle={styles.offersRow}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                >
+                  {offers.map((offer) => (
+                    <OfferCard key={offer.id} coupon={offer} />
+                  ))}
+                </ScrollView>
+                <PaginationDots activeIndex={0} count={offers.length} />
+              </>
+            ) : null}
+
+            <NearYouSection
+              salons={nearby.data?.salons ?? []}
+              loading={nearby.isLoading}
+              isError={nearby.isError}
+              hasLocation={coords != null}
+              denied={permission === 'denied'}
+              onEnableLocation={refetchLocation}
+              onOpen={openNearbySalon}
+              onSeeAll={() =>
+                navigation.navigate(
+                  'Discover',
+                  coords
+                    ? {
+                        nearby: { lat: coords.latitude, lon: coords.longitude, radius: 15 },
+                        title: 'Salons Near You',
+                      }
+                    : undefined,
+                )
+              }
+            />
+
+            <ServicesForYou categories={serviceCategories} onOpen={openBusinessType} />
+
+            <BeautyEssentials onOpen={openCatalog} />
+
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, styles.topRatedHeading]}>TOP SALONS</Text>
+            </View>
           </>
-        ) : null}
-
-        <NearYouSection
-          salons={nearby.data?.salons ?? []}
-          loading={nearby.isLoading}
-          isError={nearby.isError}
-          hasLocation={coords != null}
-          denied={permission === 'denied'}
-          onEnableLocation={refetchLocation}
-          onOpen={openNearbySalon}
-          onSeeAll={() =>
-            navigation.navigate(
-              'Discover',
-              coords
-                ? {
-                    nearby: { lat: coords.latitude, lon: coords.longitude, radius: 15 },
-                    title: 'Salons Near You',
-                  }
-                : undefined,
-            )
-          }
-        />
-
-        <ServicesForYou categories={serviceCategories} onOpen={openBusinessType} />
-
-        <BeautyEssentials onOpen={openCatalog} />
-
-        <TopSalonsSection
-          salons={topSalons}
-          loading={publicSalons.isLoading}
-          loadingMore={publicSalons.isFetchingNextPage}
-          isError={publicSalons.isError}
-          onOpen={openTopSalon}
-        />
-      </ScrollView>
+        }
+        ListEmptyComponent={
+          <TopSalonsState loading={publicSalons.isLoading} isError={publicSalons.isError} />
+        }
+        ListFooterComponent={
+          isFetchingNextPage && topSalons.length > 0 ? (
+            <View style={[styles.topSalonsFooterGap, styles.topSalonsFooter]}>
+              <ActivityIndicator color={colors.gold} />
+            </View>
+          ) : null
+        }
+      />
     </SafeAreaView>
   );
 }
@@ -753,85 +780,77 @@ function BeautyEssentials({ onOpen }: { onOpen: (category: string) => void }) {
   );
 }
 
-function TopSalonsSection({
-  salons,
-  loading,
-  loadingMore,
-  isError,
-  onOpen,
-}: {
-  salons: Salon[];
-  loading: boolean;
-  loadingMore?: boolean;
-  isError: boolean;
-  onOpen: (salon: Salon) => void;
-}) {
-  const fallbackImages = [topLumina, topAura];
+const salonKey = (salon: Salon) => salon.id;
 
-  const renderBody = () => {
-    if (loading) {
-      return (
-        <View style={styles.nearYouStateBox}>
-          <ActivityIndicator color={colors.gold} />
-        </View>
-      );
-    }
-    if (isError) {
-      return (
-        <View style={styles.nearYouStateBox}>
-          <Text style={styles.nearYouStateText}>Couldn't load top salons.</Text>
-        </View>
-      );
-    }
-    if (salons.length === 0) {
-      return (
-        <View style={styles.nearYouStateBox}>
-          <Text style={styles.nearYouStateText}>No salons available yet.</Text>
-        </View>
-      );
-    }
+const TOP_SALON_FALLBACK_IMAGES = [topLumina, topAura];
+
+function TopSalonSeparator() {
+  return <View style={styles.topRatedSeparator} />;
+}
+
+/** Loading / error / empty states for the Top Salons list (its ListEmptyComponent). */
+function TopSalonsState({ loading, isError }: { loading: boolean; isError: boolean }) {
+  if (loading) {
     return (
-      <View style={styles.topRatedList}>
-        {salons.map((salon, index) => {
-          const remote = resolveImageUrl(salon.logo_url ?? salon.cover_images?.[0]);
-          const { hasRating, label } = displayRating(salon.average_rating, salon.total_reviews);
-          // The badge is the establishment type (SPA, BARBER SHOP …) from the
-          // vendor's join request. `salon_type` is the account kind and would
-          // label every listing "SALON".
-          const chips = [
-            businessTypeChipLabel(salon.business_type).toUpperCase(),
-            salon.city,
-          ].filter(Boolean) as string[];
-          return (
-            <TopSalonCard
-              key={salon.id}
-              chips={chips}
-              hasRating={hasRating}
-              imageSource={remote ? { uri: remote } : fallbackImages[index % fallbackImages.length]}
-              location={salonLocationLabel(salon, 'Salon')}
-              name={salon.business_name}
-              onPress={() => onOpen(salon)}
-              rating={label}
-              reviews={salon.total_reviews ?? 0}
-            />
-          );
-        })}
-        {loadingMore ? (
-          <View style={styles.topSalonsFooter}>
-            <ActivityIndicator color={colors.gold} />
-          </View>
-        ) : null}
+      <View style={styles.nearYouStateBox}>
+        <ActivityIndicator color={colors.gold} />
       </View>
     );
-  };
-
+  }
+  if (isError) {
+    return (
+      <View style={styles.nearYouStateBox}>
+        <Text style={styles.nearYouStateText}>Couldn't load top salons.</Text>
+      </View>
+    );
+  }
   return (
-    <View style={styles.section}>
-      <Text style={[styles.sectionTitle, styles.topRatedHeading]}>TOP SALONS</Text>
-      {renderBody()}
+    <View style={styles.nearYouStateBox}>
+      <Text style={styles.nearYouStateText}>No salons available yet.</Text>
     </View>
   );
 }
+
+/**
+ * One Top Salons row. Memoized and fed only the salon + a stable callback, so
+ * fetching the next page (or any screen state change) doesn't re-render rows
+ * already on screen.
+ */
+const TopSalonRow = memo(function TopSalonRow({
+  salon,
+  index,
+  onOpen,
+}: {
+  salon: Salon;
+  index: number;
+  onOpen: (salon: Salon) => void;
+}) {
+  const remote = resolveImageUrl(salon.logo_url ?? salon.cover_images?.[0]);
+  const { hasRating, label } = displayRating(salon.average_rating, salon.total_reviews);
+  // The badge is the establishment type (SPA, BARBER SHOP …) from the
+  // vendor's join request. `salon_type` is the account kind and would
+  // label every listing "SALON".
+  const chips = [
+    businessTypeChipLabel(salon.business_type).toUpperCase(),
+    salon.city,
+  ].filter(Boolean) as string[];
+  return (
+    <TopSalonCard
+      chips={chips}
+      hasRating={hasRating}
+      imageSource={
+        remote
+          ? { uri: remote }
+          : TOP_SALON_FALLBACK_IMAGES[index % TOP_SALON_FALLBACK_IMAGES.length]
+      }
+      location={salonLocationLabel(salon, 'Salon')}
+      name={salon.business_name}
+      onPress={() => onOpen(salon)}
+      rating={label}
+      reviews={salon.total_reviews ?? 0}
+    />
+  );
+});
 
 function TopSalonCard({
   chips,
@@ -1446,11 +1465,15 @@ const styles = StyleSheet.create({
     color: colors.topHeading,
     marginBottom: 16,
   },
-  topRatedList: {
-    gap: 16,
-  },
   topSalonsFooter: {
     paddingVertical: 16,
+  },
+  // The 16px gap the Top Salons list puts between cards / before the footer.
+  topRatedSeparator: {
+    height: 16,
+  },
+  topSalonsFooterGap: {
+    marginTop: 16,
   },
   topRatedCard: {
     backgroundColor: colors.cardCream2,

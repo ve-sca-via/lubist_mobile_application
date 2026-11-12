@@ -60,6 +60,15 @@ const INFO_LINKS: { icon: keyof typeof Ionicons.glyphMap; label: string; path: s
   { icon: 'help-circle-outline', label: 'FAQ / Help', path: '/faq' },
 ];
 
+// Marketing pages that stay on the website (opened in the in-app WebView):
+// the blog, the RM job application (multipart CV upload) and the vendor
+// "Partner with us" lead form. Routes from salon_management_next/src/app/(public).
+const LUBIST_LINKS: { icon: keyof typeof Ionicons.glyphMap; label: string; path: string }[] = [
+  { icon: 'newspaper-outline', label: 'Blog', path: '/blog' },
+  { icon: 'storefront-outline', label: 'Partner With Us', path: '/partner-with-us' },
+  { icon: 'briefcase-outline', label: 'Careers', path: '/careers' },
+];
+
 // Typed exactly (case-insensitively) to confirm account deletion.
 const DELETE_CONFIRMATION = 'DELETE';
 
@@ -406,6 +415,29 @@ export function ProfileScreen() {
                 </View>
                 <Ionicons color={colors.muted} name="chevron-forward" size={18} />
               </Pressable>
+
+              <Pressable onPress={() => navigation.navigate('MyOrders')} style={styles.linkRow}>
+                <View style={styles.linkLeft}>
+                  <Ionicons color={colors.gold} name="receipt-outline" size={18} />
+                  <Text style={styles.linkText}>My Orders</Text>
+                </View>
+                <Ionicons color={colors.muted} name="chevron-forward" size={18} />
+              </Pressable>
+
+              <Text style={styles.sectionLabel}>Lubist</Text>
+              {LUBIST_LINKS.map((link) => (
+                <Pressable
+                  key={link.path}
+                  onPress={() => navigation.navigate('WebPage', { title: link.label, path: link.path })}
+                  style={styles.linkRow}
+                >
+                  <View style={styles.linkLeft}>
+                    <Ionicons color={colors.gold} name={link.icon} size={18} />
+                    <Text style={styles.linkText}>{link.label}</Text>
+                  </View>
+                  <Ionicons color={colors.muted} name="chevron-forward" size={18} />
+                </Pressable>
+              ))}
 
               <Text style={styles.sectionLabel}>Other Information</Text>
               {INFO_LINKS.map((link) => (

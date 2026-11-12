@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { ClientStackParamList } from '@/navigation/navigation.types';
 import { useCart, useAvailableSlots } from '@/services/api/hooks/useBookingAPI';
+import { dateStringToDate, toDateString } from '@/shared/utils/date';
 
 const colors = {
   bg: '#FFFAF5',
@@ -30,8 +31,9 @@ type Navigation = NativeStackNavigationProp<ClientStackParamList>;
 type Route = RouteProp<ClientStackParamList, 'SelectTime'>;
 
 const MAX_SLOTS = 3;
-const toYMD = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// Local calendar dates (never toISOString, which is UTC - still yesterday in
+// India before 5:30 AM).
+const toYMD = toDateString;
 
 function buildDates(count = 14) {
   const today = new Date();
@@ -73,7 +75,7 @@ export function SelectTimeScreen() {
     });
   };
 
-  const selectedDateObj = new Date(`${selectedDate}T00:00:00`);
+  const selectedDateObj = dateStringToDate(selectedDate);
   const fullDateLabel = selectedDateObj.toLocaleDateString('en-US', {
     day: 'numeric',
     month: 'long',

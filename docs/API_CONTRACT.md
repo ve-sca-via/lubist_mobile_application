@@ -76,8 +76,7 @@ the code change.
 
 ## 2. Client identification headers
 
-Every request (`services/api/client.ts`, including the token refresh call, and
-`services/upload/uploadService.ts`) sends:
+Every request (`services/api/client.ts`, including the token refresh call) sends:
 
 | Header | Value |
 |--------|-------|

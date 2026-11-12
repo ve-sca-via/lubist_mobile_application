@@ -93,3 +93,38 @@ export function useReverseGeocode(lat?: number | null, lon?: number | null, enab
     },
   });
 }
+
+/**
+ * GET /location/pincode/{pincode} - the backend asking India Post. Hand-written:
+ * the route declares no response model. `valid` is three-state: `true` known,
+ * `false` no such PIN, `null` India Post unreachable (treat as "carry on" -
+ * a checkout must never block on a free third-party API).
+ */
+export interface PincodeLookup {
+  pincode: string;
+  valid: boolean | null;
+  city: string | null;
+  state: string | null;
+  district: string | null;
+  localities: string[];
+}
+
+const SIX_DIGITS = /^\d{6}$/;
+
+/**
+ * Resolve a PIN to city/state as it is typed. Fires only on a complete
+ * six-digit PIN (one request per PIN, not per keystroke), never retries, and
+ * caches for the session - PIN data effectively never changes. Same rules as
+ * the web's `usePincodeLookup`.
+ */
+export function usePincodeLookup(pincode?: string) {
+  const normalized = (pincode ?? '').trim();
+  return useQuery({
+    queryKey: ['pincodeLookup', normalized],
+    enabled: SIX_DIGITS.test(normalized),
+    retry: false,
+    staleTime: Infinity,
+    queryFn: async () =>
+      await apiGet<PincodeLookup>(`/api/v1/location/pincode/${encodeURIComponent(normalized)}`),
+  });
+}

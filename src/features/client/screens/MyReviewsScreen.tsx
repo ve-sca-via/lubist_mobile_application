@@ -1,8 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { memo, useCallback, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { ClientStackParamList } from '@/navigation/navigation.types';
@@ -119,31 +119,13 @@ export function MyReviewsScreen() {
         </View>
       );
     }
-    return (
-      <View style={styles.list}>
-        {reviews.map((review) => (
-          <View key={review.id} style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text numberOfLines={1} style={styles.salonName}>
-                {review.salon_name ?? 'Salon'}
-              </Text>
-              <Pressable hitSlop={8} onPress={() => setEditing(review)} style={styles.editBtn}>
-                <Ionicons color={colors.gold} name="create-outline" size={16} />
-                <Text style={styles.editText}>Edit</Text>
-              </Pressable>
-            </View>
-            <View style={styles.metaRow}>
-              <Stars rating={review.rating} />
-              {review.created_at ? (
-                <Text style={styles.date}>{formatDate(review.updated_at ?? review.created_at)}</Text>
-              ) : null}
-            </View>
-            {review.comment ? <Text style={styles.comment}>{review.comment}</Text> : null}
-          </View>
-        ))}
-      </View>
-    );
+    return null;
   };
+
+  const renderReview = useCallback(
+    ({ item }: { item: CustomerReview }) => <ReviewCard onEdit={setEditing} review={item} />,
+    [],
+  );
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
@@ -155,9 +137,15 @@ export function MyReviewsScreen() {
         <View style={styles.backBtn} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {renderBody()}
-      </ScrollView>
+      <FlatList
+        data={canReview && !isLoading && !isError ? reviews : EMPTY_REVIEWS}
+        keyExtractor={reviewKey}
+        renderItem={renderReview}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        ItemSeparatorComponent={ReviewSeparator}
+        ListEmptyComponent={renderBody()}
+      />
 
       <ReviewModal
         visible={editing != null}
@@ -172,6 +160,43 @@ export function MyReviewsScreen() {
     </SafeAreaView>
   );
 }
+
+const EMPTY_REVIEWS: CustomerReview[] = [];
+
+const reviewKey = (review: CustomerReview) => review.id;
+
+function ReviewSeparator() {
+  return <View style={styles.separator} />;
+}
+
+const ReviewCard = memo(function ReviewCard({
+  review,
+  onEdit,
+}: {
+  review: CustomerReview;
+  onEdit: (review: CustomerReview) => void;
+}) {
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <Text numberOfLines={1} style={styles.salonName}>
+          {review.salon_name ?? 'Salon'}
+        </Text>
+        <Pressable hitSlop={8} onPress={() => onEdit(review)} style={styles.editBtn}>
+          <Ionicons color={colors.gold} name="create-outline" size={16} />
+          <Text style={styles.editText}>Edit</Text>
+        </Pressable>
+      </View>
+      <View style={styles.metaRow}>
+        <Stars rating={review.rating} />
+        {review.created_at ? (
+          <Text style={styles.date}>{formatDate(review.updated_at ?? review.created_at)}</Text>
+        ) : null}
+      </View>
+      {review.comment ? <Text style={styles.comment}>{review.comment}</Text> : null}
+    </View>
+  );
+});
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.bg, flex: 1 },
@@ -191,7 +216,7 @@ const styles = StyleSheet.create({
   backBtn: { height: 28, justifyContent: 'center', width: 44 },
   headerTitle: { color: colors.heading, fontFamily: 'Montserrat_600SemiBold', fontSize: 20, letterSpacing: -0.2 },
   scrollContent: { paddingBottom: 120, paddingHorizontal: 16, paddingTop: 16 },
-  list: { gap: 14 },
+  separator: { height: 14 },
   card: {
     backgroundColor: colors.cardCream,
     borderColor: colors.pillBorder,

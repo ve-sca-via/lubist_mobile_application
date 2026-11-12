@@ -71,9 +71,25 @@ export function useCart() {
   });
 }
 
+/**
+ * Add / remove share this key so overlapping taps can coordinate: the cart is
+ * refetched once, after the LAST in-flight change settles. Refetching after
+ * each one let an early response overwrite later optimistic lines, so the
+ * count and total flickered while a customer tapped ADD on several services.
+ */
+const CART_ITEM_MUTATION_KEY = ['cartItem'] as const;
+
+function settleCartChange(qc: ReturnType<typeof useQueryClient>) {
+  // This mutation still counts as in flight during onSettled.
+  if (qc.isMutating({ mutationKey: CART_ITEM_MUTATION_KEY }) <= 1) {
+    void qc.invalidateQueries({ queryKey: ['cart'] });
+  }
+}
+
 export function useAddToCart() {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: CART_ITEM_MUTATION_KEY,
     // `unit_price` is optional and used only to keep the optimistic cart total
     // accurate until the server response settles; the backend ignores it.
     mutationFn: async (data: Schema<'CartItemCreate'> & { unit_price?: number }) =>
@@ -112,10 +128,22 @@ export function useAddToCart() {
       });
       return { previous };
     },
-    onError: (_err, _data, ctx) => {
-      if (ctx?.previous) qc.setQueryData(['cart'], ctx.previous);
+    // Drop only this optimistic line. Restoring the pre-mutation snapshot would
+    // also wipe lines other in-flight adds put there.
+    onError: (_err, data) => {
+      qc.setQueryData<CartResponse>(['cart'], (old) => {
+        if (!old) return old;
+        const line = old.items.find((i) => i.id === `optimistic-${data.service_id}`);
+        if (!line) return old;
+        return {
+          ...old,
+          items: old.items.filter((i) => i !== line),
+          item_count: Math.max(0, old.item_count - line.quantity),
+          total_amount: Math.max(0, old.total_amount - line.line_total),
+        };
+      });
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['cart'] }),
+    onSettled: () => settleCartChange(qc),
   });
 }
 
@@ -131,6 +159,7 @@ export function useUpdateCartItem() {
 export function useRemoveCartItem() {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: CART_ITEM_MUTATION_KEY,
     mutationFn: async (itemId: string) => await apiDelete(`/api/v1/customers/cart/${itemId}`),
     // Optimistically drop the line so the button flips back to "ADD" instantly.
     onMutate: async (itemId) => {
@@ -149,10 +178,9 @@ export function useRemoveCartItem() {
       });
       return { previous };
     },
-    onError: (_err, _itemId, ctx) => {
-      if (ctx?.previous) qc.setQueryData(['cart'], ctx.previous);
-    },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['cart'] }),
+    // No snapshot restore (it would drop other in-flight changes): the refetch
+    // after the last change brings the line back.
+    onSettled: () => settleCartChange(qc),
   });
 }
 

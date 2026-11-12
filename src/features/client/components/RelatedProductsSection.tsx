@@ -1,4 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
+import { memo } from 'react';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -32,7 +33,9 @@ const colors = {
  * screen never shows a lonely heading. Tapping a card pushes a fresh
  * ProductDetail so the back button returns to the current product.
  */
-export function RelatedProductsSection({ productId }: { productId?: string }) {
+// Memoized: it only depends on the id, so the parent detail screen's own
+// re-renders (favourite toggles, query updates) don't re-render the strip.
+export const RelatedProductsSection = memo(function RelatedProductsSection({ productId }: { productId?: string }) {
   const navigation = useNavigation<Navigation>();
   const { data, isLoading } = useRelatedProducts(productId);
   const products = data?.products ?? [];
@@ -81,7 +84,7 @@ export function RelatedProductsSection({ productId }: { productId?: string }) {
       </ScrollView>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   section: {

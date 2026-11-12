@@ -105,6 +105,13 @@ export type ClientStackParamList = {
   Cart: undefined;
   ServiceCart: undefined;
   MyReviews: undefined;
+  // Product order history (Profile -> My Orders) and one order's detail.
+  MyOrders: undefined;
+  OrderDetail: {
+    orderId: string;
+    // Shown in the header while the order loads.
+    orderNumber?: string;
+  };
   Offers: undefined;
   WebPage: {
     title: string;
