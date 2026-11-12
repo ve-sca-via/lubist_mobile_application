@@ -1,9 +1,11 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -15,7 +17,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { ClientStackParamList } from '@/navigation/navigation.types';
-import { useSalonServices, type SalonService } from '@/services/api/hooks/useSalonsAPI';
+import {
+  isSalonBookable,
+  SALON_NOT_BOOKABLE_MESSAGE,
+  useSalonDetail,
+  useSalonServices,
+  type SalonService,
+} from '@/services/api/hooks/useSalonsAPI';
 import { useCart, useAddToCart, useRemoveCartItem } from '@/services/api/hooks/useBookingAPI';
 import { resolveImageUrl } from '@/services/api/imageUrl';
 
@@ -68,6 +76,10 @@ export function SalonServicesScreen() {
   const [openSubs, setOpenSubs] = useState<Record<string, boolean>>({});
 
   const servicesQuery = useSalonServices(salonId);
+  // Usually already cached by the salon details screen, so no extra request.
+  const salonQuery = useSalonDetail(salonId);
+  const bookable = isSalonBookable(salonQuery.data?.salon);
+  const queryClient = useQueryClient();
   const cart = useCart();
   const { mutate: addToCart, isPending: isAdding } = useAddToCart();
   const { mutate: removeItem, isPending: isRemoving } = useRemoveCartItem();
@@ -114,14 +126,30 @@ export function SalonServicesScreen() {
 
   const toggleService = (svc: SalonService) => {
     const existing = cartItemFor(svc.id);
-    if (existing) removeItem(existing.id);
-    else {
-      const unitPrice =
-        svc.discounted_price != null && svc.discounted_price < svc.price
-          ? svc.discounted_price
-          : svc.price;
-      addToCart({ service_id: svc.id, salon_id: salonId, quantity: 1, unit_price: unitPrice });
+    if (existing) {
+      removeItem(existing.id, {
+        onError: (err: any) => Alert.alert("Couldn't remove service", err?.message || 'Please try again.'),
+      });
+      return;
     }
+    if (!bookable) {
+      Alert.alert('Bookings unavailable', SALON_NOT_BOOKABLE_MESSAGE);
+      return;
+    }
+    const unitPrice =
+      svc.discounted_price != null && svc.discounted_price < svc.price ? svc.discounted_price : svc.price;
+    addToCart(
+      { service_id: svc.id, salon_id: salonId, quantity: 1, unit_price: unitPrice },
+      {
+        // The optimistic "ADDED" is rolled back on failure; say why instead of
+        // letting the button silently flip back (looked like a glitch).
+        onError: (err: any) => {
+          Alert.alert("Couldn't add service", err?.message || 'Please try again.');
+          // The salon may have stopped taking bookings since this screen loaded.
+          void queryClient.invalidateQueries({ queryKey: ['salonDetail', salonId] });
+        },
+      },
+    );
   };
 
   const toggleSub = (id: string) => setOpenSubs((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -158,6 +186,14 @@ export function SalonServicesScreen() {
         </View>
       ) : (
         <>
+          {!bookable ? (
+            <View style={styles.unavailableBanner}>
+              <Ionicons color="#92400E" name="time-outline" size={18} />
+              <Text style={styles.unavailableText}>
+                {SALON_NOT_BOOKABLE_MESSAGE} You can still browse services and prices.
+              </Text>
+            </View>
+          ) : null}
           <View style={styles.filterSection}>
             <View style={styles.searchInput}>
               <Ionicons color={colors.serviceNote} name="search-outline" size={18} />
@@ -253,7 +289,12 @@ export function SalonServicesScreen() {
                                   <Pressable
                                     disabled={busy}
                                     onPress={() => toggleService(svc)}
-                                    style={[styles.addButton, inCart && styles.addButtonActive]}
+                                    style={[
+                                      styles.addButton,
+                                      inCart && styles.addButtonActive,
+                                      !bookable && !inCart && styles.addButtonDisabled,
+                                    ]}
+                                    accessibilityState={{ disabled: !bookable && !inCart }}
                                   >
                                     <Ionicons
                                       color={inCart ? colors.white : colors.gold}
@@ -373,6 +414,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   addButtonActive: { backgroundColor: colors.gold, borderColor: colors.gold },
+  addButtonDisabled: { opacity: 0.4 },
+  unavailableBanner: {
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  unavailableText: { color: '#92400E', flex: 1, fontFamily: 'Inter_500Medium', fontSize: 13 },
   addButtonText: { color: colors.gold, fontFamily: 'Montserrat_700Bold', fontSize: 13 },
   addButtonTextActive: { color: colors.white },
   divider: { backgroundColor: colors.divider, height: 1 },

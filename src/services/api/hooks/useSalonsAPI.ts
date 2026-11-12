@@ -179,6 +179,21 @@ export function useInfinitePublicSalons({ city, pageSize = 10, enabled = true }:
 }
 
 /** Single salon detail, including its services. */
+/**
+ * Whether a salon takes bookings right now. Same rule as the backend's cart /
+ * checkout check and the web's `isBookable`: inactive salons, or salons whose
+ * owner switched off `accepting_bookings`, refuse new bookings. Unknown (still
+ * loading) counts as bookable - the backend is the final check.
+ */
+export function isSalonBookable(
+  salon?: { is_active?: boolean | null; accepting_bookings?: boolean | null } | null,
+): boolean {
+  if (!salon) return true;
+  return salon.is_active !== false && salon.accepting_bookings !== false;
+}
+
+export const SALON_NOT_BOOKABLE_MESSAGE = "This salon isn't taking bookings at the moment.";
+
 export function useSalonDetail(salonId?: string) {
   return useQuery({
     queryKey: ['salonDetail', salonId ?? null],

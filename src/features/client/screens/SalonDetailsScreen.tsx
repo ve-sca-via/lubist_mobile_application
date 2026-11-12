@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -22,6 +22,8 @@ import type { ClientStackParamList } from '@/navigation/navigation.types';
 import { RelatedSalonsSection } from '@/features/client/components/RelatedSalonsSection';
 import { useAuth } from '@/store/AuthContext';
 import {
+  isSalonBookable,
+  SALON_NOT_BOOKABLE_MESSAGE,
   useSalonDetail,
   useSalonServices,
   useSalonReviews,
@@ -381,7 +383,7 @@ export function SalonDetailsScreen() {
           <RelatedSalonsSection salonId={salonId} />
         </ScrollView>
 
-        <StickyBookButton onPress={openBooking} />
+        <StickyBookButton onPress={openBooking} bookable={isSalonBookable(salon)} />
       </View>
 
       <ReviewModal
@@ -846,12 +848,26 @@ function LocationCard({ name, location }: { name: string; location: string }) {
   );
 }
 
-function StickyBookButton({ onPress }: { onPress: () => void }) {
+/**
+ * When the salon isn't taking bookings (inactive, or the owner switched
+ * bookings off) the button says so instead of leading to an ADD that the
+ * backend rejects. The services list stays browsable for prices.
+ */
+function StickyBookButton({ onPress, bookable }: { onPress: () => void; bookable: boolean }) {
   return (
     <View style={styles.bookButtonShell}>
-      <Pressable onPress={onPress} style={styles.bookButton}>
-        <Text style={styles.bookButtonText}>Book Services  →</Text>
-      </Pressable>
+      {bookable ? (
+        <Pressable onPress={onPress} style={styles.bookButton}>
+          <Text style={styles.bookButtonText}>Book Services  →</Text>
+        </Pressable>
+      ) : (
+        <>
+          <Pressable onPress={onPress} style={[styles.bookButton, styles.bookButtonUnavailable]}>
+            <Text style={styles.bookButtonText}>Bookings unavailable · View services</Text>
+          </Pressable>
+          <Text style={styles.bookUnavailableNote}>{SALON_NOT_BOOKABLE_MESSAGE}</Text>
+        </>
+      )}
     </View>
   );
 }
@@ -1501,5 +1517,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     fontSize: 16,
     letterSpacing: 0.4,
+  },
+  bookButtonUnavailable: { backgroundColor: '#A8A29E' },
+  bookUnavailableNote: {
+    color: '#78716C',
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    marginTop: 6,
+    textAlign: 'center',
   },
 });
