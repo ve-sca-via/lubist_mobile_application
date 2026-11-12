@@ -46,9 +46,32 @@ src/
     api/        client.ts, hooks/ (one TanStack hook file per resource),
                 generated/schema.d.ts (from the backend contract — never edit), types.ts
     appGate/    force-update + wrong-app redirect gate
-    location/   notifications/ (stub — push not built)   storage/   upload/
+    location/   notifications/ (stub — push not built)   storage/
   shared/  store/  theme/  assets/
 ```
+
+## Performance rules
+
+Customers use budget Android phones; keep it light. Same rules as the Partner app:
+
+- **Import per item:** `import Ionicons from '@expo/vector-icons/Ionicons'` and
+  `@expo-google-fonts/<family>/<weight>`. The package roots bundle every icon set and
+  every weight (assets were 27 MB, now 6.9 MB). Bundled images: size them for how
+  they're shown (3x the dp size), JPEG unless they need transparency.
+- **Long lists are FlatLists** with memoized rows and stable callbacks; never `.map()`
+  a salon/product/booking list inside a ScrollView. Timers (carousels, coupon strips)
+  live in the smallest component that needs them.
+- **Query defaults** (`AppProviders.tsx`): 30 s `staleTime`, refetch on return to the
+  foreground, one retry. The cache is cleared on sign-in / sign-out / session expiry.
+  Screens that must stay fresh refetch on focus when stale (Bookings tab).
+- **Cart changes** share a mutation key: the cart refetches once after the last
+  overlapping add/remove, and a failed add removes only its own optimistic line.
+- **Never fail silently:** a rolled-back optimistic update must say why (Alert with the
+  server's message). A salon that isn't taking bookings is shown as such up front
+  (`isSalonBookable` in `useSalonsAPI.ts`, same rule as the web).
+- Calendar dates: `src/shared/utils/date.ts`, never `toISOString().slice(0, 10)` (UTC).
+
+Measure with `npx expo export --platform android` (JS bundle + `assets/` size).
 
 ## API types
 
