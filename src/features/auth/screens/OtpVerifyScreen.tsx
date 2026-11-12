@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { AuthStackParamList } from '@/navigation/navigation.types';
 import { useAuth } from '@/store/AuthContext';
+import { isHandledGlobally } from '@/services/api/client';
 import {
   useVerifyPhoneOtp,
   useVerifySignupPhoneOtp,
@@ -122,6 +123,8 @@ export function OtpVerifyScreen() {
             });
           },
           onError: (error: any) => {
+            // Update-required / partner-account errors open a full-screen gate.
+            if (isHandledGlobally(error)) return;
             Alert.alert('Verification Failed', error.message || 'Invalid or expired OTP. Please try again.');
           }
         }

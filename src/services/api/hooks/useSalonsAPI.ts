@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { apiGet } from '../client';
+import type { Schema, WithFields } from '../types';
 import type { AvailableCoupon } from './useBookingAPI';
 
 export type { AvailableCoupon };
@@ -8,36 +9,24 @@ export type { AvailableCoupon };
 // TYPES (mapped from backend/app/api/salons.py — salons table rows)
 // ==========================================
 
-export interface Salon {
-  id: string;
-  business_name: string;
-  description?: string | null;
-  address?: string | null;
-  city?: string | null;
-  state?: string | null;
-  pincode?: string | null;
-  phone?: string | null;
-  email?: string | null;
-  latitude?: number | null;
-  longitude?: number | null;
-  average_rating?: number | null;
-  total_reviews?: number | null;
-  created_at?: string | null;
-  logo_url?: string | null;
-  cover_images?: string[] | null;
-  // Account kind ('salon' | 'regular_buyer') — NOT the establishment type.
-  // Never render this on a card; use `business_type` below.
-  salon_type?: string | null;
-  // Kind of establishment, sourced from the vendor's join request:
-  // 'salon' | 'spa' | 'clinic' | 'unisex_salon' | 'barber_shop' | 'beauty_parlor' | …
-  business_type?: string | null;
-  has_discount?: boolean | null;
-  distance_km?: number | null;
-  // Public coupon/discount display data (attached by the backend salon endpoints)
-  has_discounted_services?: boolean | null;
-  max_discount_percentage?: number | null; // largest service discount %, for "UPTO X% OFF"
-  coupons?: AvailableCoupon[] | null;       // this salon's vendor coupons
-}
+/**
+ * A salon as listed by /salons/public, /salons/search/query, /salons/{id}/related
+ * and /location/salons/nearby (`SalonListResponse` in the contract).
+ * `salon_type` is the account kind ('salon' | 'regular_buyer') - never render it;
+ * use `business_type` (the kind of establishment) instead.
+ */
+export type Salon = WithFields<
+  Schema<'SalonListResponse'>,
+  {
+    /**
+     * CONTRACT DRIFT: not in SalonListResponse, so the backend strips it and it
+     * is always undefined on list rows. Kept only so the "New Arrivals" sort in
+     * ClientDiscoverScreen compiles; that sort is a no-op until the backend adds
+     * `created_at` to SalonListResponse. See docs/API_CONTRACT.md.
+     */
+    created_at?: string | null;
+  }
+>;
 
 /** Human-readable labels for the backend's `business_type` values. */
 export const BUSINESS_TYPE_LABELS: Record<string, string> = {
@@ -77,12 +66,8 @@ export function businessTypeChipLabel(type?: string | null): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export interface SalonDetail extends Salon {
-  opening_time?: string | null;
-  closing_time?: string | null;
-  working_days?: string[] | null;
-  platform_coupons?: AvailableCoupon[] | null; // platform-wide coupons (detail only)
-}
+/** Single-salon detail (`PublicSalonResponse`): the list fields plus contact info and platform coupons. */
+export type SalonDetail = Schema<'PublicSalonResponse'>;
 
 export interface TaxonomyNode {
   id: string;
@@ -109,10 +94,9 @@ export interface SalonService {
   taxonomy?: ServiceTaxonomy | null;
 }
 
-interface SalonServicesResponse {
-  services: SalonService[];
-  count: number;
-}
+// The contract types `services` as `object[]` (raw rows), so the element type
+// above is hand-written and overlaid here.
+type SalonServicesResponse = WithFields<Schema<'SalonServicesResponse'>, { services: SalonService[] }>;
 
 export interface SalonReview {
   id: string;
@@ -125,23 +109,15 @@ export interface SalonReview {
   vendor_response?: string | null;
 }
 
-interface SalonListResponse {
-  salons: Salon[];
-  count: number;
-  offset?: number;
-  limit?: number;
-}
+type SalonListResponse = Schema<'PublicSalonsResponse'>;
+type SearchSalonsResponse = Schema<'SearchSalonsResponse'>;
 
-interface SalonDetailResponse {
-  salon: SalonDetail;
-  services: SalonService[] | null;
-}
+type SalonDetailResponse = WithFields<
+  Schema<'SalonDetailResponse'>,
+  { services?: SalonService[] | null }
+>;
 
-interface SalonReviewsResponse {
-  success: boolean;
-  reviews: SalonReview[];
-  count: number;
-}
+type SalonReviewsResponse = WithFields<Schema<'PublicSalonReviewsResponse'>, { reviews: SalonReview[] }>;
 
 interface PublicSalonsParams {
   city?: string;
@@ -256,7 +232,7 @@ export function useSearchSalons({ q, city, state, limit = 50, enabled = true }: 
       if (q?.trim()) params.set('q', q.trim());
       if (city) params.set('city', city);
       if (state) params.set('state', state);
-      return await apiGet<SalonListResponse>(`/api/v1/salons/search/query?${params.toString()}`);
+      return await apiGet<SearchSalonsResponse>(`/api/v1/salons/search/query?${params.toString()}`);
     },
   });
 }

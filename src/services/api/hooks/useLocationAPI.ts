@@ -1,37 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '../client';
+import type { Schema, WithFields } from '../types';
 
 // ==========================================
 // TYPES (mapped from backend/app/api/location.py)
 // ==========================================
 
-export interface NearbySalon {
-  id: string;
-  business_name: string;
-  description?: string | null;
-  address?: string | null;
-  city?: string | null;
-  state?: string | null;
-  pincode?: string | null;
-  phone?: string | null;
-  email?: string | null;
-  latitude?: number | null;
-  longitude?: number | null;
-  average_rating?: number | null;
-  total_reviews?: number | null;
-  logo_url?: string | null;
-  cover_images?: string[] | null;
-  distance_km?: number | null;
-  // Kind of establishment ('spa' | 'barber_shop' | …). The PostGIS function
-  // doesn't return it; the backend attaches it from the vendor join request.
-  business_type?: string | null;
-}
+/** Same shape as the public listings (`SalonListResponse`), plus `distance_km`. */
+export type NearbySalon = Schema<'SalonListResponse'>;
 
-export interface NearbySalonsResponse {
-  salons: NearbySalon[];
-  count: number;
-  query: { latitude: number; longitude: number; radius_km: number };
-}
+export type NearbySalonsResponse = WithFields<
+  Schema<'NearbySalonsResponse'>,
+  { query: { latitude: number; longitude: number; radius_km: number } }
+>;
 
 /**
  * Raw shape from the backend: the `address` field is itself an object

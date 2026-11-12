@@ -77,6 +77,8 @@ export function EmailSignupScreen() {
     gender !== null;
 
   const handleSignup = () => {
+    // The button is disabled until a gender is picked; the backend requires it.
+    if (gender === null) return;
     registerUser(
       {
         email: email.trim(),
@@ -85,7 +87,7 @@ export function EmailSignupScreen() {
         // No phone here: this is the email-only track. Users add and verify a
         // phone later from Profile, which keeps `phone_verified` meaningful.
         age: ageNum,
-        gender: gender ?? undefined,
+        gender,
         user_role: 'customer',
       },
       {

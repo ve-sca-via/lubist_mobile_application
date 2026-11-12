@@ -19,7 +19,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { env } from '@/app/config/env';
 import type { AuthStackParamList } from '@/navigation/navigation.types';
 import { useAuth } from '@/store/AuthContext';
+import { isHandledGlobally } from '@/services/api/client';
 import { useLogin } from '@/services/api/hooks/useAuthAPI';
+import { appGate } from '@/services/appGate/appGateStore';
 
 // This app is customers only. /auth/login itself has no role restriction (the
 // web portal shares it), so every other role is stopped here and pointed at the
@@ -78,12 +80,15 @@ export function EmailLoginScreen() {
           if (!ALLOWED_ROLES.includes(role)) {
             // Returning without signIn leaves nothing behind - signIn is what
             // writes the tokens to SecureStore, so the session is simply dropped.
+            if (role === 'vendor') {
+              // Same screen the backend's 403 USE_PARTNER_APP opens (AppGate).
+              appGate.showWrongApp('other_app', null);
+              return;
+            }
             const portal = env.webBaseUrl.replace(/^https?:\/\//, '');
             Alert.alert(
               'Use the web portal',
-              role === 'vendor'
-                ? `Manage your salon on the Lubist partner portal (${portal}) or the Lubist for Partners app. This app is for customer accounts.`
-                : `${ROLE_LABELS[role] ?? 'Staff'} accounts are managed on the Lubist web portal (${portal}). The app is for customer accounts.`,
+              `${ROLE_LABELS[role] ?? 'Staff'} accounts are managed on the Lubist web portal (${portal}). The app is for customer accounts.`,
             );
             return;
           }
@@ -95,6 +100,8 @@ export function EmailLoginScreen() {
           });
         },
         onError: (error: any) => {
+          // Update-required / partner-account errors open a full-screen gate.
+          if (isHandledGlobally(error)) return;
           Alert.alert('Login Failed', error.message || 'Invalid email or password.');
         }
       }

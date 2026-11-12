@@ -9,6 +9,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
+    "api:types": "node scripts/api-types.mjs",
+    "api:check": "node scripts/api-types.mjs --check",
     "ota": "eas update --branch production --clear-cache",
     "build:prod": "eas build --platform android --profile production",
     "build:store": "eas build --platform android --profile production-store",
@@ -47,6 +49,7 @@
     "@types/react": "~19.1.10",
     "babel-plugin-module-resolver": "^5.0.2",
     "babel-preset-expo": "~54.0.10",
+    "openapi-typescript": "^7.13.0",
     "typescript": "~5.9.2"
   }
 }

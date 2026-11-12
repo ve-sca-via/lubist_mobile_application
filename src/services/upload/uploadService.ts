@@ -1,6 +1,8 @@
 import * as ImagePicker from 'expo-image-picker';
 
+import { clientHeaders } from '@/app/config/clientApp';
 import { env } from '@/app/config/env';
+import { toApiError } from '@/services/api/client';
 import { getAccessToken } from '@/services/storage/tokenStorage';
 
 export type SalonImageFolder = 'covers' | 'logos' | 'gallery';
@@ -82,17 +84,12 @@ async function multipartUpload<T>(path: string, asset: ImagePicker.ImagePickerAs
 
   const response = await fetch(`${env.apiBaseUrl}${path}`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    headers: { ...clientHeaders(), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: formData,
   });
 
   if (!response.ok) {
-    let detail = `Upload failed with status ${response.status}`;
-    try {
-      const body = await response.json();
-      detail = body.detail || body.message || detail;
-    } catch {}
-    throw new Error(detail);
+    throw await toApiError(response);
   }
 
   return response.json() as Promise<T>;
@@ -134,16 +131,11 @@ export async function getAgreementDocumentSignedUrl(path: string): Promise<Signe
   const token = await getAccessToken();
   const response = await fetch(
     `${env.apiBaseUrl}/api/v1/upload/agreement-document/signed-url?path=${encodeURIComponent(path)}`,
-    { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
+    { headers: { ...clientHeaders(), ...(token ? { Authorization: `Bearer ${token}` } : {}) } },
   );
 
   if (!response.ok) {
-    let detail = `Failed to load document with status ${response.status}`;
-    try {
-      const body = await response.json();
-      detail = body.detail || body.message || detail;
-    } catch {}
-    throw new Error(detail);
+    throw await toApiError(response);
   }
 
   return response.json() as Promise<SignedUrlResult>;

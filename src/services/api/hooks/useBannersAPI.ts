@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '../client';
 import { resolveImageUrl } from '../imageUrl';
+import type { Schema, WithFields } from '../types';
 
 // ==========================================
 // TYPES (mapped from backend/app/api/banners.py — banners table rows)
@@ -19,11 +20,8 @@ export interface Banner {
   [k: string]: any;
 }
 
-interface BannerListResponse {
-  success: boolean;
-  banners: Banner[];
-  count: number;
-}
+// `banners` is `object[]` in the contract, hence the hand-written Banner row.
+type BannerListResponse = WithFields<Schema<'BannerListResponse'>, { banners: Banner[] }>;
 
 // ==========================================
 // HELPERS

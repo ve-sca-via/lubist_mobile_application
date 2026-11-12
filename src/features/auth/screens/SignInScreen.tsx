@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { AuthStackParamList } from '@/navigation/navigation.types';
 import { useAuth } from '@/store/AuthContext';
+import { isHandledGlobally } from '@/services/api/client';
 import { useSendPhoneOtp, useSendSignupPhoneOtp } from '@/services/api/hooks/useAuthAPI';
 
 // Assets exported 1:1 from Figma ("Onboarding - Vibrant Luxury").
@@ -97,10 +98,12 @@ export function SignInScreen() {
             countryCode: COUNTRY_CODE,
             verificationId: data.verification_id,
             mode: 'login',
-            customerName: data.customer_name,
+            customerName: data.customer_name ?? undefined,
           });
         },
         onError: (error: any) => {
+          // Update-required / partner-account errors open a full-screen gate.
+          if (isHandledGlobally(error)) return;
           const message = error.message || 'Failed to send OTP';
           const lower = message.toLowerCase();
 

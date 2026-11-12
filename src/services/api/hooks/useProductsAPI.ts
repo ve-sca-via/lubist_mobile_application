@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiDelete, apiGet, apiPost, apiPut } from '../client';
 import { resolveImageUrl } from '../imageUrl';
+import type { Schema, WithFields } from '../types';
 
 // ==========================================
 // TYPES (mapped from backend/app/api/products.py — products table rows)
@@ -32,20 +33,13 @@ export interface Product {
   [k: string]: any;
 }
 
-interface ProductListResponse {
-  success: boolean;
-  products: Product[];
-  count: number;
-  offset: number;
-  limit: number;
-  total?: number | null;
-}
+// The contract types product rows as a free-form `object`, so `Product` above is
+// hand-written and overlaid onto the generated envelopes.
+type ProductListResponse = WithFields<Schema<'ProductListResponse'>, { products: Product[] }>;
 
-interface ProductResponse {
-  success: boolean;
-  product: Product;
-}
+type ProductResponse = WithFields<Schema<'ProductResponse'>, { product: Product }>;
 
+// `/products/categories` has no declared response model.
 interface ProductCategoriesResponse {
   success: boolean;
   categories: string[];
@@ -178,24 +172,9 @@ export function useRelatedProducts(productId?: string, limit = 10) {
 // ==========================================
 
 /** A processed product-cart line item (backend already computes price/total). */
-export interface ProductCartItem {
-  id: string;
-  product_id: string;
-  name?: string | null;
-  price: number;
-  quantity: number;
-  image_url?: string | null;
-  image_urls?: string[];
-  total: number;
-  is_b2b_price?: boolean;
-}
+export type ProductCartItem = Schema<'ProductCartItem'>;
 
-export interface ProductCartResponse {
-  success: boolean;
-  items: ProductCartItem[];
-  total_amount: number;
-  item_count: number;
-}
+export type ProductCartResponse = Schema<'ProductCartResponse'>;
 
 const PRODUCT_CART_KEY = ['productCart'];
 
@@ -211,8 +190,11 @@ export function useProductCart() {
 export function useAddToProductCart() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { product_id: string; quantity?: number }) =>
-      await apiPost('/api/v1/customers/product-cart', { quantity: 1, ...data }),
+    mutationFn: async (data: Schema<'ProductCartItemAdd'>) =>
+      await apiPost<Schema<'ProductCartOperationResponse'>>('/api/v1/customers/product-cart', {
+        quantity: 1,
+        ...data,
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: PRODUCT_CART_KEY }),
   });
 }
@@ -222,7 +204,9 @@ export function useUpdateProductCartItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ itemId, quantity }: { itemId: string; quantity: number }) =>
-      await apiPut(`/api/v1/customers/product-cart/${itemId}`, { quantity }),
+      await apiPut<Schema<'ProductCartOperationResponse'>>(`/api/v1/customers/product-cart/${itemId}`, {
+        quantity,
+      } satisfies Schema<'ProductCartItemUpdate'>),
     onSuccess: () => qc.invalidateQueries({ queryKey: PRODUCT_CART_KEY }),
   });
 }
@@ -262,11 +246,14 @@ export interface ShippingAddress {
   pincode: string;
 }
 
-export interface CreateProductOrderPayload {
-  shipping_address: ShippingAddress;
-  discount_total?: number;
-  items: { product_id: string; quantity: number }[];
-}
+/**
+ * `CreateOrderRequest`. The backend prices the order server-side; the only
+ * discount input it accepts is `coupon_code` (it ignores any client amount).
+ */
+export type CreateProductOrderPayload = WithFields<
+  Schema<'CreateOrderRequest'>,
+  { shipping_address: ShippingAddress }
+>;
 
 export interface ProductOrderCreateResponse {
   order: { id: string; order_number: string; total_amount: number; [k: string]: any };
@@ -282,10 +269,9 @@ export interface ProductOrderCreateResponse {
 export function useCreateProductOrder() {
   return useMutation({
     mutationFn: async (payload: CreateProductOrderPayload) =>
-      await apiPost<ProductOrderCreateResponse>('/api/v1/product-orders/create', {
-        discount_total: 0,
-        ...payload,
-      }),
+      // `discount_total: 0` used to be sent here; the contract has no such field
+      // (the server computes discounts), so it was silently dropped. Removed.
+      await apiPost<ProductOrderCreateResponse>('/api/v1/product-orders/create', payload),
   });
 }
 
@@ -293,11 +279,8 @@ export function useCreateProductOrder() {
 export function useVerifyProductOrder() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: {
-      razorpay_order_id: string;
-      razorpay_payment_id: string;
-      razorpay_signature: string;
-    }) => await apiPost('/api/v1/product-orders/verify', payload),
+    mutationFn: async (payload: Schema<'VerifyPaymentRequest'>) =>
+      await apiPost('/api/v1/product-orders/verify', payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: PRODUCT_CART_KEY }),
   });
 }
@@ -320,11 +303,7 @@ export function useDevVerifyProductOrder() {
 // ==========================================
 
 /** Backend returns full product rows under `favorites`, mirroring salon favorites. */
-export interface ProductFavoritesResponse {
-  success: boolean;
-  favorites: Product[];
-  count: number;
-}
+export type ProductFavoritesResponse = WithFields<Schema<'FavoritesResponse'>, { favorites: Product[] }>;
 
 export const PRODUCT_FAVORITES_KEY = ['productFavorites'];
 
@@ -343,7 +322,9 @@ export function useAddFavoriteProduct() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (productId: string) =>
-      await apiPost('/api/v1/customers/favorites/products', { product_id: productId }),
+      await apiPost<Schema<'FavoriteOperationResponse'>>('/api/v1/customers/favorites/products', {
+        product_id: productId,
+      } satisfies Schema<'ProductFavoriteCreate'>),
     onSuccess: () => qc.invalidateQueries({ queryKey: PRODUCT_FAVORITES_KEY }),
   });
 }

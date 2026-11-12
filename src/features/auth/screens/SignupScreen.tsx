@@ -76,6 +76,8 @@ export function SignupScreen() {
   const { mutate: registerUser, isPending } = useSignup();
 
   const handleSignup = () => {
+    // The button is disabled until a gender is picked; the backend requires it.
+    if (gender === null) return;
     registerUser(
       {
         email: email.trim(),
@@ -84,7 +86,7 @@ export function SignupScreen() {
         full_name: fullName.trim(),
         phone: `+${countryCode}${phone}`,
         age: ageNum,
-        gender: gender ?? undefined,
+        gender,
         user_role: 'customer',
         verification_token: verificationToken,
       },

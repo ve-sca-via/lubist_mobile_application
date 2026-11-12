@@ -1,5 +1,43 @@
+import { OWN_STORE_FALLBACK_URL, WRONG_APP_ERROR_CODE, clientHeaders } from '@/app/config/clientApp';
 import { env } from '@/app/config/env';
+import { appGate } from '@/services/appGate/appGateStore';
 import { getAccessToken, getRefreshToken, setTokens, clearAuth } from '../storage/tokenStorage';
+
+/**
+ * Every failed API call throws one of these. `code` is the backend's
+ * `error_code` (AppException bodies are `{ message, error_code }`), e.g.
+ * 'APP_UPDATE_REQUIRED', 'USE_PARTNER_APP'. `message` is what to show the user.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  readonly body: any;
+
+  constructor(status: number, message: string, code: string | null = null, body: any = null) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.body = body;
+  }
+}
+
+export const APP_UPDATE_REQUIRED = 'APP_UPDATE_REQUIRED';
+export const USE_WEB_PORTAL = 'USE_WEB_PORTAL';
+
+/**
+ * True for errors the app-wide gate (shared/components/AppGate) already shows
+ * a full-screen UI for - screens should not ALSO pop an Alert for them.
+ */
+export function isHandledGlobally(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  return (
+    error.status === 426 ||
+    error.code === APP_UPDATE_REQUIRED ||
+    error.code === WRONG_APP_ERROR_CODE ||
+    error.code === USE_WEB_PORTAL
+  );
+}
 
 // Called when the session can no longer be recovered (refresh failed / expired).
 // AuthContext registers a handler here so it can clear in-memory state and
@@ -15,10 +53,55 @@ async function handleSessionExpired() {
   onAuthExpired?.();
 }
 
+/**
+ * Routes the errors that concern the whole app (not the calling screen) to the
+ * gate store. Called for every failed response, including token refresh.
+ */
+async function routeGlobalError(error: ApiError): Promise<void> {
+  if (error.status === 426 || error.code === APP_UPDATE_REQUIRED) {
+    // The 426 body carries the store link; app-config's fallback otherwise.
+    const storeUrl = typeof error.body?.store_url === 'string' ? error.body.store_url : null;
+    appGate.requireUpdate(error.message, storeUrl ?? OWN_STORE_FALLBACK_URL);
+    return;
+  }
+  if (error.status === 403 && (error.code === WRONG_APP_ERROR_CODE || error.code === USE_WEB_PORTAL)) {
+    // This account doesn't belong in this app: drop the session (it would be
+    // refused on every call anyway) and explain where to go instead.
+    await handleSessionExpired();
+    appGate.showWrongApp(error.code === USE_WEB_PORTAL ? 'web_portal' : 'other_app', error.message);
+  }
+}
+
+/** Builds an ApiError from a non-2xx response and routes app-wide errors. */
+export async function toApiError(response: Response): Promise<ApiError> {
+  let message = `API request failed with status ${response.status}`;
+  let code: string | null = null;
+  let body: any = null;
+  try {
+    body = await response.json();
+    // The backend's exception handlers rename FastAPI's `detail` to `message`
+    // (app/core/handlers.py), and validation failures arrive as an `errors`
+    // array instead. Read all three, or every failure shows the generic
+    // status-code text above and the real reason never reaches the user.
+    const fromErrors = Array.isArray(body?.errors)
+      ? body.errors.map((e: any) => e?.message).filter(Boolean).join('\n')
+      : '';
+    const raw = body?.message || body?.detail || fromErrors;
+    if (raw) {
+      message = typeof raw === 'string' ? raw : JSON.stringify(raw);
+    }
+    if (typeof body?.error_code === 'string') code = body.error_code;
+  } catch (e) {}
+  const error = new ApiError(response.status, message, code, body);
+  await routeGlobalError(error);
+  return error;
+}
+
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const token = await getAccessToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...clientHeaders(),
   };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -29,9 +112,12 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 // Single-flight refresh: if several requests 401 at once (common when a screen
 // mounts and fires multiple queries), they all await the SAME refresh promise
 // instead of each POSTing to /auth/refresh and racing each other's setTokens().
-let refreshPromise: Promise<boolean> | null = null;
+// Resolves true (refreshed), false (refresh token dead) or an ApiError the app
+// gate handles (426 update required / wrong app) - that one must NOT be reported
+// as an expired session, or an outdated build would log every user out.
+let refreshPromise: Promise<boolean | ApiError> | null = null;
 
-async function refreshSession(): Promise<boolean> {
+async function refreshSession(): Promise<boolean | ApiError> {
   if (!refreshPromise) {
     refreshPromise = (async () => {
       const refreshToken = await getRefreshToken();
@@ -39,10 +125,13 @@ async function refreshSession(): Promise<boolean> {
       try {
         const res = await fetch(`${env.apiBaseUrl}/api/v1/auth/refresh`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...clientHeaders() },
           body: JSON.stringify({ refresh_token: refreshToken }),
         });
-        if (!res.ok) return false;
+        if (!res.ok) {
+          const error = await toApiError(res);
+          return isHandledGlobally(error) ? error : false;
+        }
         const data = await res.json();
         await setTokens(data.access_token, data.refresh_token);
         return true;
@@ -95,38 +184,24 @@ async function request<T>(
   }
 
   const refreshed = await refreshSession();
+  if (refreshed instanceof ApiError) throw refreshed;
   if (!refreshed) {
     await handleSessionExpired();
-    throw new Error('Session expired. Please log in again.');
+    throw new ApiError(401, 'Session expired. Please log in again.', 'SESSION_EXPIRED');
   }
 
   // Retry with freshly-fetched headers (new access token).
   const retried = await buildRequest(await getAuthHeaders());
   if (retried.status === 401) {
     await handleSessionExpired();
-    throw new Error('Session expired. Please log in again.');
+    throw new ApiError(401, 'Session expired. Please log in again.', 'SESSION_EXPIRED');
   }
   return processValidResponse<T>(retried);
 }
 
 async function processValidResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    let errorDetail = `API request failed with status ${response.status}`;
-    try {
-      const errBody = await response.json();
-      // The backend's exception handlers rename FastAPI's `detail` to `message`
-      // (app/core/handlers.py), and validation failures arrive as an `errors`
-      // array instead. Read all three, or every failure shows the generic
-      // status-code text above and the real reason never reaches the user.
-      const fromErrors = Array.isArray(errBody.errors)
-        ? errBody.errors.map((e: any) => e?.message).filter(Boolean).join('\n')
-        : '';
-      const raw = errBody.message || errBody.detail || fromErrors;
-      if (raw) {
-        errorDetail = typeof raw === 'string' ? raw : JSON.stringify(raw);
-      }
-    } catch (e) {}
-    throw new Error(errorDetail);
+    throw await toApiError(response);
   }
 
   return response.json() as Promise<T>;

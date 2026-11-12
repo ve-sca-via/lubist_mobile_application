@@ -63,7 +63,9 @@
 | Auth token storage | 🟢 | `src/services/storage/tokenStorage.ts` — **using `expo-secure-store` persistence** |
 | AuthContext (real session) | 🟢 | `src/store/AuthContext.tsx` — **holds real token + user, auto-restores login on launch** |
 | Query key conventions | ⬜ | Define a `queryKeys` factory once we add `useQuery` reads |
-| Centralized error handling | ⬜ | Map backend `{detail}` shape to UI toasts |
+| Centralized error handling | 🟡 | `ApiError` (`status`, `code` = backend `error_code`, `message`) thrown by every call; app-wide errors (426 update required, 403 `USE_PARTNER_APP` / `USE_WEB_PORTAL`) routed to `shared/components/AppGate.tsx`. Per-screen errors still use `Alert` |
+| Generated API types (contract) | 🟢 | `npm run api:types` → `src/services/api/generated/schema.d.ts` from `backend/openapi/openapi.json`; helpers in `src/services/api/types.ts`; `npm run api:check` for CI. See `docs/API_CONTRACT.md` |
+| Client headers + force update | 🟢 | `X-Client-App: customer-app`, `X-App-Version`, `X-App-Platform` on every request; `GET /app-config` on launch/foreground (fails open). Not yet verified against a deployed backend |
 | Env config per environment | 🟡 | `src/app/config/env.ts` hardcodes localhost — add staging/prod |
 
 > ⚠️ These foundations should be finished early — most read endpoints below need an
@@ -394,6 +396,27 @@ File: `backend/app/api/admin/` — listed for completeness; primarily consumed b
 
 ---
 
+## 🧾 Contract drift audit — 2026-11-12
+
+Checked every endpoint the app calls (path + method) against the generated
+contract `backend/openapi/openapi.json` (145 paths, exported 2026-11-12).
+
+- **Endpoints:** 62 hook calls + the token refresh + `GET /app-config` — **all exist,
+  no wrong methods.** The `/upload/*` helpers in `src/services/upload/uploadService.ts`
+  also exist, but nothing in the customer app imports that file any more (vendor
+  module removed).
+- **New:** `GET /api/v1/app-config` (version policy) — wired, see `docs/API_CONTRACT.md`.
+- **Type drift found while deriving hook types from the contract:**
+  - FIXED: `useCreateProductOrder` sent `discount_total: 0`, which `CreateOrderRequest` doesn't have.
+  - FIXED: `customer_name` from phone send-otp can be `null`; signup `gender` is required.
+  - OPEN (backend): `SalonListResponse` has no `created_at`, so the Discover "New Arrivals" sort does nothing.
+  - OPEN (app, feature gap): `CreateOrderRequest.coupon_code` (product coupons) exists in the backend; the app has no product-coupon UI.
+  - Untyped in the contract (no response model), hand-written types kept: `/auth/me`, `/auth/signup/phone/verify-otp`, `/products/categories`, `/product-orders/create`, `/product-orders/verify`, `/location/reverse-geocode`.
+
+Full table: `docs/API_CONTRACT.md` §6.
+
+---
+
 ## 🔭 Backend v2 / gap notes (to discuss)
 
 Candidates we flagged for a possible `/api/v2` or backend tweaks to better serve mobile:
@@ -406,7 +429,8 @@ Candidates we flagged for a possible `/api/v2` or backend tweaks to better serve
 
 ---
 
-_Last updated: 2026-06-13 (Coupons & discounts: NEW customer `POST /customers/cart/validate-coupon`
+_Last updated: 2026-11-12 (Generated contract types, client headers, force-update and partner-account redirect; contract drift audit above — no missing endpoints.) ·
+Earlier: 2026-06-13 (Coupons & discounts: NEW customer `POST /customers/cart/validate-coupon`
 + `coupon_code` on `/payments/cart/create-order` & `/customers/cart/checkout` (mobile: add an
 "Apply coupon" field on CheckoutScreen + `useValidateCoupon`); vendor CRUD `/vendors/coupons` and
 admin CRUD `/admin/coupons` are web-only. Full build brief for all three frontends:
