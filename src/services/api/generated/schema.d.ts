@@ -2135,6 +2135,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/notifications/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register Device
+         * @description Register (or move to the signed-in user) a phone's push token.
+         */
+        post: operations["register_device_api_v1_notifications_devices_post"];
+        /**
+         * Unregister Device
+         * @description Remove a push token for the signed-in user (call before signing out).
+         */
+        delete: operations["unregister_device_api_v1_notifications_devices_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/partners/apply": {
         parameters: {
             query?: never;
@@ -4947,6 +4971,34 @@ export interface components {
             reviews: Record<string, never>[];
             /** Success */
             success: boolean;
+        };
+        /**
+         * DeviceRegister
+         * @description A phone's Expo push token, sent by the mobile app after sign-in.
+         */
+        DeviceRegister: {
+            /**
+             * App
+             * @enum {string}
+             */
+            app: "partner-app" | "customer-app";
+            /** Device Id */
+            device_id?: string | null;
+            /**
+             * Expo Push Token
+             * @description ExponentPushToken[...] from expo-notifications
+             */
+            expo_push_token: string;
+            /**
+             * Platform
+             * @enum {string}
+             */
+            platform: "android" | "ios";
+        };
+        /** DeviceUnregister */
+        DeviceUnregister: {
+            /** Expo Push Token */
+            expo_push_token: string;
         };
         /**
          * FaqItem
@@ -10984,6 +11036,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NearbySalonsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    register_device_api_v1_notifications_devices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceRegister"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unregister_device_api_v1_notifications_devices_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceUnregister"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
